@@ -1,11 +1,4 @@
-我来帮你分析EMcos软件的用途。首先让我访问提供的网站获取详细信息。
-
-
-
-
-根据搜索到的信息，**EMCoS**（EM Consulting & Software）是一家专注于电磁场问题的咨询和软件公司，其旗舰产品 **EMCoS Studio** 是一个专业的 **电磁兼容（Electromagnetic Compatibility, EMC）分析软件**。
-
-## 核心功能与技术架构
+**电磁兼容（Electromagnetic Compatibility, EMC）分析软件**。
 
 ### 1. **主要应用领域**
 EMCoS Studio用于分析和解决大型系统的EMC问题，支持从早期概念决策到子系统测试模拟的全流程EMC工程。软件能够处理从简单的测试装置到复杂的电子系统（如飞机、汽车、舰船等）的电磁兼容性仿真。

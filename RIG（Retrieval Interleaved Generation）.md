@@ -1,10 +1,4 @@
-# RIG（Retrieval Interleaved Generation）全面解析
-
-## 一、核心概念
-
 **RIG（Retrieval Interleaved Generation）** 是一种专门设计的技术，使 **Large Language Models（LLMs）** 能够"知道何时询问"外部数据，通过将结构化外部数据动态交织到响应中来增强事实准确性。
-
-### 直观理解
 
 想象你在写一篇报告时：
 - **传统LLM**：完全依赖记忆中的知识，可能过时或错误
