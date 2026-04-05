@@ -1,11 +1,3 @@
-# 深度解读《You Exist In The Long Context》
-
-## 📚 文章核心论点概览
-
-这是一篇由 **Steven Johnson**（知名科普作家、NotebookLM团队成员）撰写的关于 **Long Context（长上下文）** 对AI革命性影响的深度文章。作者通过一个精心设计的互动游戏案例，引出了一个被低估的AI突破：**上下文窗口的指数级扩展**。
-
----
-
 ## 1️⃣ 技术架构深度解析
 
 ### 1.1 Context Window 的工作原理

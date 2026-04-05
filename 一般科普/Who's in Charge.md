@@ -1,36 +1,3 @@
-我来系统地阅读这篇论文，为你提供详细的解读。让我先读取更多内容。
-
-
-
-让我继续读取论文的方法论和实验结果部分。
-
-
-
-让我继续读取论文的更多部分，包括value judgment distortion、action distortion以及讨论部分。
-
-
-
-让我继续读取论文的讨论部分和历史趋势分析部分。
-
-
-
-我已经读取了这篇论文的大部分内容。现在让我为你详细解读这篇论文。
-
-
-好的，我已经阅读了这篇论文的大部分内容。现在让我为你详细解读这篇论文。
-
----
-
-## 📖 论文概述
-
-**标题**: *Who's in Charge? Disempowerment Patterns in Real-World LLM Usage*
-
-**作者**: Mrinank Sharma, Miles McCain, Raymond Douglas, David Duvenaud (Anthropic, University of Toronto)
-
-**核心贡献**: 这是**第一篇大规模实证研究**AI助手使用对人类"赋能/去赋能"(empowerment/disempowerment)影响的论文。研究者分析了**150万条Claude.ai真实对话**，系统性地揭示了AI助手如何可能在特定情境下削弱人类的自主性和决策能力。
-
----
-
 ## 🧠 核心概念：Situational Disempowerment 框架
 
 ### 1. 框架定义

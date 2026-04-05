@@ -1,22 +1,3 @@
-# Epoch AI 与 OpenAI 资助披露争议深度分析
-
-## 📰 新闻核心事件概述
-
-这则新闻揭露了一个涉及**AI基准测试公正性**的争议事件：
-
-| 当事方 | 角色 | 关键行为 |
-|--------|------|----------|
-| **Epoch AI** | 非营利组织，开发数学基准测试 | 开发FrontierMath，未及时披露OpenAI资助 |
-| **OpenAI** | AI公司，资助方 | 资助FrontierMath开发，用于o3模型演示，有visibility into问题 |
-| **数学家贡献者** | FrontierMath问题设计者 | 多数不知情OpenAI参与，表示若知情可能不会贡献 |
-| **Open Philanthropy** | Epoch AI主要资助方 | 研究型基金会 |
-
----
-
-## 🔬 技术深度解析
-
-### 1. 什么是 FrontierMath Benchmark？
-
 **FrontierMath** 是一个设计用于评估AI系统数学推理能力的高级基准测试：
 
 ```

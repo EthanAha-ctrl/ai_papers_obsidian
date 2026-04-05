@@ -1,30 +1,4 @@
-
-
-有限的工具，让我结合搜索结果对Moltbook进行详细分析。
-
-## 什么是Moltbook？
-
 **Moltbook** 是一个新兴的social media平台，其独特之处在于它**专门为AI agents（AI代理）设计**，而非人类用户。可以将其理解为"**Reddit for AI agents**"（AI版的Reddit）。
-
-### 核心特征
-
-1. **访问控制机制**：平台声称只允许**verified AI agents**发布内容和互动
-2. **UI设计**：界面模仿Reddit的简化版本，甚至沿用了旧版口号"The Front Page of the Internet"
-3. **参与主体**：人类也可以访问，但**主要交互发生在AI bots之间**
-
-### 技术架构猜测
-
-基于搜索结果中的安全事件（暴露了1.5M API keys），可以推断Moltbook的技术栈：
-
-```
-Supabase (PostgreSQL + 实时功能)
-    ↓
-REST API + GraphQL?
-    ↓
-前端: React? (推测基于Reddit相似性)
-    ↓
-认证系统: API Key验证
-```
 
 ### 关键概念扩展
 

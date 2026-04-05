@@ -1,13 +1,6 @@
-PostScript (简称 PS) 不仅仅是一种打印格式，它本质上是一种 Turing-complete 的、基于 Stack 的 Page Description Language (PDL)。它的出现彻底改变了 Digital Publishing 和 Electronic Printing 的行业。
-
-为了建立你的 Intuition，请把 PostScript 想象成给 Printer (具体说是 Raster Image Processor, RIP) 发送的一组“绘图指令代码”，而不是像 JPEG 或 PNG 那样发送“像素点阵”。Computer 告诉 Printer：“这里画一条贝塞尔曲线，那里填充红色，字体用 Helvetica”，然后 Printer 内部的 CPU 自己计算这些指令应该对应纸张上哪里的墨粉。
-
-以下是对 PostScript 架构、数学原理和技术细节的深度解析：
-
 ### 1. 核心架构：Stack-based Interpreter (基于栈的解释器)
 
-PostScript 的语言设计深受 Forth 语言的影响。它采用 Reverse Polish Notation (RPN，逆波兰表示法)。理解这一点对于建立 Intuition 至关重要，因为它不需要复杂的语法解析器，执行效率极高。
-
+PostScript 的语言设计深受 Forth 语言的影响。它采用 Reverse Polish Notation (RPN，逆波兰表示法)。它不需要复杂的语法解析器，执行效率极高。
 #### Stack Operations (栈操作)
 PostScript 虚拟机维护一个 Operand Stack (操作数栈)。所有的运算符都直接从栈中取值，计算后放回栈中。
 
@@ -121,30 +114,9 @@ PostScript 文件发送到打印机后，必须经过 RIP 处理。这是从“V
     *   **Level 2:** 引入了 Composite Color (合成色彩)，Binary Data Compression (如 Run-Length Encoding, LZW, JPEG)，极大减小了文件体积。
     *   **Level 3:** 引入了渐进式渲染，更好的 Masking 和 Shading（Mesh Gradients）。
 
-### 7. 与 PDF 的关系与区别
-
-PostScript 是 PDF 的前身。
-*   **PostScript:** 是一种 Programming Language。它是解释执行的，必须顺序读取，代码中有 `if/else` 循环，甚至可以有死循环。
-*   **PDF (Portable Document Format):** 是基于 PostScript 语言结构的图形文件格式。它去除了 PS 的执行流特性（不能随便写程序循环），使用了更高效的对象结构，并支持 Random Access (随机访问)，这使得 PDF 在浏览器中打开第 100 页时不需要解析前 99 页。
-
-**直觉理解：** PostScript 是发给 Printer 的“源代码”，而 PDF 是编译好的“可执行二进制文件”。
-
 ### 8. 扩展联想
-
-为了满足你对深度联想的需求，以下是与 PostScript 相关的技术点：
-
 *   **Ghostscript:** 这是一个非常重要的 Open Source Interpreter，它可以将 PostScript 转换为 PDF，或者转换为 Raster formats (如 PNG, TIFF)。许多 Linux printing system (CUPS) 底层都依赖它。
 *   **Display PostScript:** NeXT Computer (Steve Jobs 的公司) 曾经尝试将 PostScript 作为 Windowing System (NeWS) 的屏幕渲染语言，这意味着屏幕上的窗口和打印机上的纸张使用完全相同的语言描述。
 *   **Interpress:** Xerox PARC 开发的 PostScript 的前身，John Warnock (Adobe 创始人) 参与了开发但认为它太复杂，于是离开后写了更简洁的 PostScript。
 *   **PCL (Printer Command Language):** HP 的竞争协议。PCL 是一种 Command-based protocol，更接近于控制打印机的寄存器，虽然快但不如 PS 精确且不具备设备无关性。
 *   **Variable Data Printing (VPP):** 利用 PS 的编程能力，每一页的内容可以根据数据库动态变化（例如：`<Name> <Address>` 每页都不同），这被称为 Personalized Printing。
-
-### Reference Links
-
-*   **Adobe PostScript Language Reference (3rd Edition):** [https://www.adobe.com/jp/devnet/postscript/pdfs/PLRM.pdf](https://www.adobe.com/jp/devnet/postscript/pdfs/PLRM.pdf) (官方圣经，包含所有语法和算法)
-*   **Ghostscript Official Site:** [https://www.ghostscript.com/](https://www.ghostscript.com/)
-*   **Understanding PostScript Programming:** [https://www.nwfusion.com/research/1999/0802ps.html](https://www.nwfusion.com/research/1999/0802ps.html) (经典教程)
-*   **PostScript vs. PDF:** [https://en.wikipedia.org/wiki/PostScript](https://en.wikipedia.org/wiki/PostScript)
-*   **Bézier Curve Math Visualization:** [https://www.jasondavies.com/animated-bezier/](https://www.jasondavies.com/animated-bezier/)
-
-通过这种深度的技术拆解，你可以看到 PostScript 不仅仅是一个文件后缀，它是连接 Virtual Graphics 和 Physical Ink 的数学桥梁。
