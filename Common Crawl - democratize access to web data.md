@@ -1,7 +1,3 @@
-# Common Crawl Foundation 详解
-
-## 一、组织概述与使命
-
 **Common Crawl** 是一个非营利性 501(c)(3) 组织，其核心使命是 **democratize access to web data**（使网络数据访问民主化）。该组织通过大规模 web crawling，构建并免费向公众开放其 archives 和 datasets，从而打破数据垄断，降低研究门槛。
 
 ### 关键人物与资金来源

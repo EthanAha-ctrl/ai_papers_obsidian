@@ -1,36 +1,16 @@
-# Meta Surface (超表面) 详解
-
-让我先查看一下您上传的文件中是否有相关内容，然后为您详细讲解meta surface。
-
-
-
-很好！您的文件中提到了"from photonic crystals to metamaterials"，这正是我们讨论meta surface的起点。让我为您全面讲解meta surface。
-
----
-
-## 一、什么是 Meta Surface？
-
-**Meta Surface**（超表面）是一种人工设计的二维平面结构，由亚波长尺度的**meta-atom**（超原子）周期性或非周期性排列组成。与传统光学元件依靠光在介质中传播累积相位不同，meta surface通过亚波长结构在界面处对光波进行**突发的相位、振幅和偏振调控**。
-
-### 核心特征：
 - **亚波长厚度**：厚度远小于波长（通常为λ/10 ~ λ/4）
 - **亚波长单元结构**：meta-atom尺寸 < λ
 - **波前工程**：可对光波的相位、振幅、偏振进行任意调控
-
----
-
 ## 二、Meta Surface vs Metamaterial vs Photonic Crystal
 
 您的文件提到了gyroid结构在photonic crystals和metamaterials中的应用，这三者的关系如下：
 
-| 特性 | Photonic Crystal | Metamaterial | Meta Surface |
-|------|------------------|--------------|--------------|
-| 维度 | 3D或2D周期结构 | 3D人工结构 | 2D平面结构 |
-| 单元尺寸 | ~λ | << λ | << λ |
-| 物理机制 | Bragg散射/带隙 | 有效介质近似 | 界面相位突变 |
-| 调控方式 | 折射率周期调制 | ε, μ工程 | 表面阻抗/相位工程 |
-
-### 文件中的Gyroid连接：
+| 特性   | Photonic Crystal | Metamaterial | Meta Surface |
+| ---- | ---------------- | ------------ | ------------ |
+| 维度   | 3D或2D周期结构        | 3D人工结构       | 2D平面结构       |
+| 单元尺寸 | ~λ               | << λ         | << λ         |
+| 物理机制 | Bragg散射/带隙       | 有效介质近似       | 界面相位突变       |
+| 调控方式 | 折射率周期调制          | ε, μ工程       | 表面阻抗/相位工程    |
 
 您文件中的**gyroid**结构可以理解为：
 - 作为**photonic crystal**时：周期性结构产生带隙，调控光传播

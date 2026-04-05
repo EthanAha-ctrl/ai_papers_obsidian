@@ -1,5 +1,3 @@
-基于您提供的维基百科信息以及当前 AI 领域的前沿动态，以下是对 **Safe Superintelligence Inc. (SSI Inc.)** 的深度解析。为了建立您对该公司的直觉，我将从公司定位、技术理论基础、可能的技术架构以及资本与战略逻辑四个维度进行展开。
-
 ### 1. 公司定位与使命
 
 SSI Inc. 是一家由 **Ilya Sutskever**、**Daniel Gross** 和 **Daniel Levy** 共同创立的 **American artificial intelligence company**。**虽然** 该公司成立于 2024 年，**但是** 其核心目标非常宏大且单一，即 **safely develop superintelligence**。**因为** Ilya Sutskever 曾作为 **OpenAI** 的 **chief scientist**，他在 **board dispute** 并投票 **fire Sam Altman** 后离开，**进而** 决定创建一家完全专注于 **safety** 和 **superintelligence** 的公司，**而不像** OpenAI 在 **commercialization** 路线上越走越远。

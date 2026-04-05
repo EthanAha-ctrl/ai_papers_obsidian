@@ -1,8 +1,4 @@
-
 **合成孔径** 是一种 **interferometry** 技术，它将多个 **telescopes** 收集到的信号进行混合，产生与整个望远镜集合尺寸相当的角分辨率的图像。
-
-### 核心物理原理
-
 在每个分离和方向上，**interferometer** 的波瓣模式产生一个输出，该输出是被观测物体亮度空间分布的 **Fourier transform** 的一个分量。图像（或"map"）从这些测量中产生。
 
 **关键公式**：
@@ -18,11 +14,6 @@ I(θ, φ) = ∫∫ V(u, v) · e^(2πi(ux + vy)) dudv
 - **θ, φ** = 源的角度坐标
 
 **UV plane** 是合成孔径中的核心概念，它代表空间频率域。每个 **baseline** 在 **UV plane** 中对应一个采样点。
-
-参考链接：
-- [NRAO - Aperture Synthesis](https://public.nrao.edu/telescopes/vla/vla-basics/)
-- [ESO - Interferometry](https://www.eso.org/sci/facilities/develop/instruments/interferometry.html)
-
 ## 二、 Baseline 计算
 
 **Baseline** 定义为从 **radio source** 看到的任意两个望远镜之间的投影分离。

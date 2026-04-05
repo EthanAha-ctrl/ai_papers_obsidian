@@ -1,19 +1,5 @@
-我来详细介绍一下 Milvus。让我先获取最新的官方信息。
-
-
-
-
-基于搜索结果，让我详细解释 Milvus 向量数据库的核心原理和应用。
-
-## **Milvus Core Positioning**
-
 **Milvus** 是一个开源的云原生 **vector database**，专门用于**大规模向量相似性搜索**。它设计用来处理 **AI/ML** 工作负载中的向量数据（如 **embedding**、**feature vectors**），支持 **Approximate Nearest Neighbor** 搜索任务。
-
----
-
-## **技术架构详解**
-
-根据官方文档，**Milvus** 采用 **Shared-Storage Architecture**（共享存储架构），具有 **Storage/Computing Disaggregation**（存储计算解耦）特性。其架构分为以下几个核心组件：
+**Milvus** 采用 **Shared-Storage Architecture**（共享存储架构），具有 **Storage/Computing Disaggregation**（存储计算解耦）特性。其架构分为以下几个核心组件：
 
 ### **1. 分层架构 (Layered Architecture)**
 

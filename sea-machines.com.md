@@ -1,35 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-好的，我现在已经收集了足够的信息，让我为你详细介绍一下 **Sea Machines Robotics** 这家公司。
-
----
-
-## Sea Machines Robotics 公司全景解析
-
-### 一、公司概况
-
-**Sea Machines Robotics** 是一家总部位于 **Boston, MA** 的海洋自主技术公司，成立于 **2015年**。
-
-**创始人**: **Michael G. Johnson** —— 一位拥有20年海洋工程经验的 marine engineer。他在2015年创立了这家公司，旨在revolutionize海洋导航技术。
-
-**公司定位**: Leading provider of **autonomous control and intelligent perception systems** for commercial marine and maritime sector.
-
-**官方网站**: [sea-machines.com](https://sea-machines.com)
-
-**维基百科**: [Sea Machines Robotics - Wikipedia](https://en.wikipedia.org/wiki/Sea_Machines_Robotics)
-
----
-
 ### 二、核心产品线
 
 #### 1. **SM200 - Industrial-Grade Remote-Helm Control**

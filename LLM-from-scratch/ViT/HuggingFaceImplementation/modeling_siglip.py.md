@@ -1,9 +1,3 @@
-这是一个非常经典的 **Vision Transformer (ViT)** 实现，特别是针对 **SigLIP** 架构的适配代码。在 **Vision Language Model (VLM)** 的上下文中，这段代码扮演了 **Vision Encoder**（视觉编码器）的核心角色。它的主要任务是将输入的 **Image** 转化为一系列的 **Visual Tokens**，以便后续的 **LLM (Large Language Model)** 或 **Projector** 进行理解和处理。
-
-以下是对这段代码的深度技术讲解、架构解析以及相关的扩展联想。
-
----
-
 ### 1. ViTPatchEmbeddings: 图像序列化
 
 这个类是 Vision Transformer 的入口，负责将原始像素数据转换为 Transformer 可以处理的序列数据。

@@ -1,20 +1,3 @@
-我来帮你深入了解 Dyna Robotics 这家公司。首先让我访问他们的官网获取详细信息。
-
-让我通过搜索来获取 Dyna Robotics 的详细信息：
-
-
-
-
-
-
-
-
-基于我的调研，让我详细解析 Dyna Robotics 这家公司及其核心技术。
-
-## 公司概述
-
-**Dyna Robotics** 是一家处于发展前沿的 AI-powered robotics startup，总部位于美国。根据其官网(www.dyna.co)信息，该公司专注于开发和部署面向机器人操作的基础模型（foundation models），愿景是将 embodied AGI（具身人工智能）带入现实世界，构建通用机器人以推动实体经济的发展。
-
 ### 核心产品：DYNA-1
 
 **DYNA-1** 被宣传为"首个商业就绪的灵巧机器人基础模型"，这一里程碑标志着机器人技术从研究实验室走向实际工业应用的重要突破。该模型能够实现fully autonomous, round-the-clock dexterity，即完全自主且全天候执行的灵巧操作能力。
