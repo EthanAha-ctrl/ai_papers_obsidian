@@ -1,17 +1,6 @@
-
-
-
-# Allan Variance (Allan 方差) 详细技术讲解
-
-## 一、基本概念与物理直觉
-
-### 1.1 核心定义
-
 **Allan variance (AVAR)**，也称为 **two-sample variance (双样本方差)**，是衡量 **clocks**（时钟）、**oscillators**（振荡器）和 **amplifiers**（放大器）**frequency stability**（频率稳定性）的统计量。它由 **David W. Allan** 在1966年提出。
 
 **Allan deviation (ADEV)**，也称为 **sigma-tau**，是 Allan variance 的平方根。
-
-### 1.2 直观理解
 
 想象两个相邻的时间间隔测量：
 

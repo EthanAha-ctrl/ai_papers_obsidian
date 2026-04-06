@@ -1,8 +1,4 @@
-我来深度解析这篇关于Intel董事会的批评文章。这是一篇**Doug O'Laughlin**写的深度分析文章，标题为"**The Death of Intel: When Boards Fail**"（Intel之死：当董事会失效时）。
-
-## 一、文章核心论点概述
-
-这篇文章的核心观点是：**Intel的衰落不仅仅是CEO Pat Gelsinger的问题，更重要的是董事会的系统性失效**。作者认为：
+**Intel的衰落不仅仅是CEO Pat Gelsinger的问题，更重要的是董事会的系统性失效**。作者认为：
 
 1. **Pat Gelsinger被解雇（文章称之为"retirement"的委婉说法）是董事会的错误决策**
 2. **董事会缺乏必要的半导体行业技术能力**

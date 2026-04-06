@@ -1,6 +1,3 @@
-# Named-Entity Recognition (NER) 技术详解
-
-## 一、NER 定义与基本概念
 
 **Named-Entity Recognition (NER)**（也称为 entity identification、entity chunking 或 entity extraction）是 **Information Extraction** 的一个子任务，目标是从非结构化文本中定位并分类命名实体到预定义的类别中，如：
 - **Person names (PER)**

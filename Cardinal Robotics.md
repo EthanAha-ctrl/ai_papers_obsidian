@@ -1,37 +1,6 @@
-
-
-
-
-
-
-让我基于搜索结果和原始网页内容，为您详细解析 Cardinal Robotics 这家公司：
-
----
-
-# Cardinal Robotics 公司深度解析
-
-## 一、公司定位与核心使命
-
 Cardinal Robotics 是一家专注于 **Enterprise Robotics Solutions**（企业机器人解决方案）的公司，其核心理念是 "Robotic Adoption Made Easy"（让机器人采用变得简单）。公司的核心使命可以概括为：
 
 ### 1.1 商业模式：Robots-as-a-Service (RaaS)
-
-这是一个**服务订阅模式**，而非传统硬件销售模式。具体公式为：
-
-```
-Monthly Cost = Base Rate × Operating Hours + Service Fee
-```
-
-其中：
-- `Base Rate`: 基础费率（如 vacuuming/cleaning robot 为 $2.99/hr）
-- `Operating Hours`: 实际运行小时数
-- `Service Fee`: 维护服务费（包含在基础服务中，零额外成本）
-
-这种模式的核心价值在于：
-- **Zero Upfront Cost**: 零前期成本
-- **Unlimited Servicing**: 无限次服务维护
-- **Pay-per-use**: 按使用付费
-
 ### 1.2 问题解决框架
 
 公司针对的劳动力市场痛点可以用以下供需模型表示：
