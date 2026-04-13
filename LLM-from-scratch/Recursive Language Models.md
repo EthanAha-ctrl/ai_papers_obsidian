@@ -1,25 +1,3 @@
-我来详细阅读这篇论文，为你全面讲解。
-
-
-
-
-
-
-好的，我来为你详细讲解这篇 **Recursive Language Models** 论文。这是一篇来自 MIT CSAIL 的非常有创新性的工作。
-
----
-
-## 📚 论文概览
-
-**标题**: Recursive Language Models  
-**作者**: Alex L. Zhang, Tim Kraska, Omar Khattab (MIT CSAIL)  
-**日期**: 2026年1月  
-**代码**: https://github.com/alexzhang13/rlm
-
----
-
-## 🎯 核心问题：为什么需要 RLMs？
-
 ### 1. **Context Rot 问题**
 
 论文指出，当前 frontier LLMs（如 GPT-5）存在一个关键问题 —— **"context rot"**（上下文腐化）：
