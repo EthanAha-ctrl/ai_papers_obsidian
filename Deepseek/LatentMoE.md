@@ -1,19 +1,9 @@
-# LatentMoE: 混合专家架构的革命性改进
-
-## 一、核心思想与问题背景
-
-### 1.1 现有MoE架构的效率瓶颈
-
-传统**Mixture of Experts (MoE)**架构虽然能够在固定FLOPs下扩展参数数量，但在实际部署中存在严重的效率问题：
-
-**内存带宽瓶颈（延迟关键场景）：**
+存在效率问题 **内存带宽瓶颈（延迟关键场景）：**
 - 在低延迟交互场景中，MoE计算主要受限于**HBM内存带宽**而非计算能力
 - 对于GB200 GPU，计算受限的阈值条件是：
   $$I \geq 1250 \text{ FLOPs/byte}$$
   其中算术强度I定义为：
   $$I = \frac{2 \cdot t_{\text{exp}} \cdot d \cdot m}{d \cdot m + t_{\text{exp}} \cdot (d + m)}$$
-  
-  **变量含义：**
   - $t_{\text{exp}}$：每个专家处理的token数量
   - $d$：模型隐藏维度（如4096）
   - $m$：中间FFN维度（如2688）
@@ -27,27 +17,17 @@
 - 通信时间与计算时间之比：
   $$\frac{t_{\text{comm}}}{t_{\text{comp}}} = \frac{5 \cdot F}{4 \cdot m \cdot \text{BW}_{\text{NVL}}}$$
   代入GB200参数后比值约**9**，说明通信开销主导
-
-### 1.2 LatentMoE的洞察
-
-LatentMoE的核心洞察是：**现代推理系统中，内存带宽和通信是主导瓶颈，而非计算FLOPs**。因此，MoE设计应该优化这两个维度。
-
-## 二、LatentMoE架构原理
-
 ### 2.1 核心机制：潜在空间投影
 
 LatentMoE通过将输入token从高维隐藏空间投影到低维潜在空间来实现效率提升：
-
 **下投影：**
 $$h_{\text{latent}} = W_{\downarrow} \cdot x$$
 其中 $x \in \mathbb{R}^d$，$W_{\downarrow} \in \mathbb{R}^{\ell \times d}$，$\ell \ll d$
-
 **专家计算：**
 $$E_i(h_{\text{latent}}; \ell)$$
 每个专家$E_i$在潜在空间$\mathbb{R}^{\ell}$中工作，参数为：
 - $W_{\text{FC1}}^{(i)}, W_{\text{gate}}^{(i)} \in \mathbb{R}^{m \times \ell}$
 - $W_{\text{FC2}}^{(i)} \in \mathbb{R}^{\ell \times m}$
-
 **上投影：**
 $$y = W_{\uparrow} \cdot \left(\sum_{i \in \mathcal{T}} p_i \cdot E_i(h_{\text{latent}})\right)$$
 其中 $W_{\uparrow} \in \mathbb{R}^{d \times \ell}$

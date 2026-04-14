@@ -1,6 +1,5 @@
-**结论：绝对不是。**
 
-目前的 **PyTorch** 生态是一个高度**混合** 的架构。虽然 **Triton** 在 `torch.compile`（特别是 **Inductor** backend）和许多高性能库（如 **FlashAttention**）中占据了核心地位，但原生的 **CUDA C++** 内核、**cuBLAS**、**cuDNN** 以及 **TensorRT** 等 backend 依然是不可或缺的基石。
+虽然 **Triton** 在 `torch.compile`（特别是 **Inductor** backend）和许多高性能库（如 **FlashAttention**）中占据了核心地位，但原生的 **CUDA C++** 内核、**cuBLAS**、**cuDNN** 以及 **TensorRT** 等 backend 依然是不可或缺的基石。
 
 并不是所有的 `torch.cuda` 调用都直接转化为 Triton 代码。Triton 更多是作为一种**Kernel 生成器** 和 **Fusion Engine** 存在于新的编译栈中，而在传统的 eager mode 和某些极度优化的算子中，原生 CUDA 依然是主力。
 
@@ -8,8 +7,7 @@
 
 ### 1. 架构深度解析：PyTorch 中的多 Backend 共存
 
-为了回答你的问题，我们需要剖析 PyTorch 的计算图层级。目前的 PyTorch (2.x+) 具有双层执行模式。
-
+目前的 PyTorch (2.x+) 具有双层执行模式。
 #### A. Eager Mode (急切执行模式)
 在传统的 `model(input)` 调用中（未使用 `torch.compile`），流程如下：
 
@@ -47,16 +45,13 @@
 
 为了更好地理解为什么不能完全替换，我们需要对比两者的技术特性。
 
-#### 2.1 软件栈对比
-
-| 特性 | Native CUDA C++ | Triton (OpenAI) |
-| :--- | :--- | :--- |
+| 特性       | Native CUDA C++                                                                   | Triton (OpenAI)                                                                                         |
+| :------- | :-------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
 | **编程模型** | **Thread-level**: 显式管理 `threadIdx`, `blockIdx`, `shared memory` 同步, Warp shuffle. | **Block-level: 编写每个 `program` (类似 CUDA Block) 的逻辑。** 自动将 Block 映射到 SMs，自动处理 Tiling 和 Software Pipeline。 |
-| **内存管理** | **Manual**: 需要手动计算 Stride, Shared Memory Bank Conflicts, Padding. | **Automatic**: 编译器后端自动处理 `load` / `store` 的向量化 和缓存优化。 |
-| **开发效率** | **Low**: 编写高性能 Kernel 极其困难，需要深度的硬件架构知识。 | **High**: 代码量通常只有 CUDA 的 1/10，类似于写 NumPy。 |
-| **性能上限** | **Very High**: 绝对的性能天花板，由 NVIDIA 工程师手写优化。 | **High**: 在 90-95% 的场景下接近手写 CUDA，但在极度依赖 Tensor Core 或特定 Texture Memory 的场景下可能略逊。 |
-| **使用场景** | **PyTorch Core**, cuDNN, cuBLAS, `torch.utils.cpp_extension`. | **Inductor**, `xFormers`, `flash-attn`, `vLLM`. |
-
+| **内存管理** | **Manual**: 需要手动计算 Stride, Shared Memory Bank Conflicts, Padding.                 | **Automatic**: 编译器后端自动处理 `load` / `store` 的向量化 和缓存优化。                                                   |
+| **开发效率** | **Low**: 编写高性能 Kernel 极其困难，需要深度的硬件架构知识。                                           | **High**: 代码量通常只有 CUDA 的 1/10，类似于写 NumPy。                                                               |
+| **性能上限** | **Very High**: 绝对的性能天花板，由 NVIDIA 工程师手写优化。                                         | **High**: 在 90-95% 的场景下接近手写 CUDA，但在极度依赖 Tensor Core 或特定 Texture Memory 的场景下可能略逊。                        |
+| **使用场景** | **PyTorch Core**, cuDNN, cuBLAS, `torch.utils.cpp_extension`.                     | **Inductor**, `xFormers`, `flash-attn`, `vLLM`.                                                         |
 #### 2.2 核心公式与原理：Triton 的 Soft-Pipeline
 
 Triton 的核心优势在于其自动生成的 **Software Pipeline**。
@@ -99,7 +94,7 @@ def matmul_kernel(ptr_a, ptr_b, ptr_c, ...):
     store(accumulator, ptr_c)
 ```
 
-**关键技术点**: Triton 利用 **LLVM** 的编译栈，将上述 Triton IR 转换为 **LLVM IR**，再转换为 **NVPTX**。它自动插入了 **`cp.async`**（用于异步拷贝数据到 Shared Memory）和 **`wgmma.mma_async`**（用于 Tensor Core 计算）指令，无需用户手写 Assembly。
+Triton 利用 **LLVM** 的编译栈，将上述 Triton IR 转换为 **LLVM IR**，再转换为 **NVPTX**。它自动插入了 **`cp.async`**（用于异步拷贝数据到 Shared Memory）和 **`wgmma.mma_async`**（用于 Tensor Core 计算）指令，无需用户手写 Assembly。
 
 ---
 

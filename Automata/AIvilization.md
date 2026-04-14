@@ -1,55 +1,13 @@
-
-
-让我搜索一下这个公司的信息。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-好的，我已经收集了大量信息。下面给你一个全面且深入的解析。
-
----
-
-# AIvilization (aivilization.ai / aivilization.cn) —— 全面解析
-
-## 一、公司概述
-
-**AIvilization** 是由 **HKUST（Hong Kong University of Science and Technology，香港科技大学）** 的 **Professor Pan Hui** 团队主导的一个大规模 **AI Multi-Agent Social Simulation（AI 多智能体社会模拟）** 项目/平台。它的核心定位是：
+由 **HKUST** 的大规模 **AI Multi-Agent Social Simulation（AI 多智能体社会模拟）** 项目/平台。
 
 > 构建一个 **digital sandbox（数字沙盒）**，让数以万计甚至 **100,000 个 AI Agent** 在一个资源受限的模拟经济中自由发展、交互、共存，模拟未来 **human-AI cohabitation（人-AI 共栖）** 和 **civilizational evolution（文明演化）** 的可能形态。
 
 简单来说，这是一个"**AI 版 SimCity + 社会实验室**"——但每个 NPC 都是一个由 **LLM（Large Language Model）** 驱动的 autonomous agent，拥有独立的 personality、memory、goals 和 adaptive behavior。
 
-**参考链接：**
-- 官网: https://aivilization.cn/
-- 论文: https://arxiv.org/abs/2602.10429
-- HKUST 新闻: https://hkust.edu.hk/news/hkust-launches-worlds-largest-ai-powered-educational-sandbox-game-advancing-ai-literacy-and
-- The Decoder 报道: https://the-decoder.com/aivilization-experiment-lets-over-22000-ai-agents-model-what-future-societies-could-become/
-- Medium 深度分析: https://kellyontech.medium.com/aivilization-100-000-ai-agents-rehearse-the-rules-of-the-mirrorworld-4c3d7f60381b
-
----
-
-## 二、核心技术架构（来自论文 AIvilization v0, arXiv: 2602.10429）
-
-论文标题：**"AIvilization v0: Toward Large-Scale Artificial Social Simulation with a Unified Agent Architecture and Adaptive Agent Profiles"**
-
-### 2.1 系统的两大支柱
-
-整个系统耦合了两个核心子系统：
-
-| 子系统 | 说明 |
-|---|---|
+| 子系统                                      | 说明                                                                     |
+| ---------------------------------------- | ---------------------------------------------------------------------- |
 | **Resource-Constrained Sandbox Economy** | 一个有稀缺资源（food, shelter, tools, currency 等）的模拟经济世界，agent 必须在资源有限的约束下做出决策 |
-| **Unified LLM-Agent Architecture** | 所有 agent 共用一个统一的 LLM-driven 认知架构，但通过 adaptive profile 实现个性差异 |
+| **Unified LLM-Agent Architecture**       | 所有 agent 共用一个统一的 LLM-driven 认知架构，但通过 adaptive profile 实现个性差异           |
 
 ### 2.2 核心技术创新 #1：Hierarchical Branch-Thinking Planner（层级分支思维规划器）
 

@@ -1,28 +1,9 @@
-我来详细读取这篇论文的内容，为你提供深入的技术讲解。
+# Anytime Pretraining: Horizon-Free Learning-Rate Schedules with Weight Averaging 
 
-
-
-
-
-
-
-
-
-
-
-
-# Anytime Pretraining: Horizon-Free Learning-Rate Schedules with Weight Averaging 论文详解
-
-## 一、问题背景与动机
-
-### 1.1 当前的LLM预训练范式问题
-
-大语言模型（LLM）正在越来越多地在连续或开放式设置中训练，**其中总训练horizon（训练时长/步数）不是预先知道的**。然而：
-
+**其中总训练horizon（训练时长/步数）不是预先知道的**。然而：
 - 现有的预训练recipes大多数**不是anytime的**：它们依赖于**horizon-dependent的学习率调度**和在固定计算预算下的广泛调整
 - **Cosine decay**自Loshchilov和Hutter（2016）提出以来，已成为LLM预训练的de facto学习率调度器
 - **Cosine decay的致命缺陷**：它是一个horizon-dependent调度器，因为需要提前知道训练运行的长度，这使得它不适用于持续学习设置
-
 ### 1.2 Cosine Decay的问题
 
 从Figure 1可以看到：

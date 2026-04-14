@@ -1,54 +1,28 @@
-这篇文章是OpenAI于2026年1月23日发布的工程博客，由Michael Bolin撰写，深入探讨了 **Codex CLI** 的核心架构——**Agent Loop（智能体循环）**。这是OpenAI首次系统性公开其软件智能体的内部实现细节，对于理解现代AI Agent架构具有极高的参考价值。
-
----
-
-## 一、文章背景与定位
-
-### 1.1 Codex 产品矩阵
-
-根据文章，OpenAI的"Codex"品牌涵盖多个产品线：
-
-| 产品名称 | 部署形态 | 核心功能 |
-|---------|---------|---------|
-| **Codex CLI** | 本地命令行工具 | 跨平台本地软件Agent，直接操作用户机器 |
-| **Codex Cloud** | 云端服务 | 云端托管的Codex体验 |
-| **Codex VS Code Extension** | IDE插件 | 集成开发环境中的智能体体验 |
-
-文章聚焦于 **Codex Harness**——这是所有Codex产品共享的**核心Agent循环和执行逻辑**，通过Codex CLI暴露给用户。
-
-### 1.2 文章定位
-
-这是OpenAI计划发布的**系列文章的第一篇**，旨在：
-- 分享构建世界级软件Agent的经验教训
-- 透明化设计决策（通过GitHub repo: https://github.com/openai/codex）
-- 为开发者提供构建Agent的实践指南
-
----
-
-## 二、Agent Loop 核心概念
+深入探讨了 **Codex CLI** 的核心架构——**Agent Loop（智能体循环）**
+文章聚焦于 **Codex Harness**——这是所有Codex产品共享的**核心Agent循环和执行逻辑**
+## 二、核心概念
 
 ### 2.1 什么是Agent Loop？
-
 **Agent Loop（智能体循环）** 是所有AI Agent的核心逻辑，负责编排三方交互：
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      AGENT LOOP ARCHITECTURE                     │
+│                      AGENT LOOP ARCHITECTURE                    │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
+│                                                                 │
 │    ┌──────────┐      ┌──────────┐      ┌──────────────────┐     │
 │    │   USER   │─────▶│  AGENT   │◀────▶│  MODEL (LLM)     │     │
 │    │  INPUT   │      │  HARNESS │      │  (Inference)     │     │
 │    └──────────┘      └────┬─────┘      └──────────────────┘     │
-│                           │                                      │
-│                           ▼                                      │
-│                    ┌──────────────┐                              │
-│                    │    TOOLS     │                              │
-│                    │  (shell,     │                              │
-│                    │   web_search,│                              │
-│                    │   MCP, etc.) │                              │
-│                    └──────────────┘                              │
-│                                                                  │
+│                           │                                     │
+│                           ▼                                     │
+│                    ┌──────────────┐                             │
+│                    │    TOOLS     │                             │
+│                    │  (shell,     │                             │
+│                    │   web_search,│                             │
+│                    │   MCP, etc.) │                             │
+│                    └──────────────┘                             │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,7 +33,6 @@
 $$
 \text{Let } \mathcal{P}_0 = \text{UserInput} + \text{SystemInstructions} + \text{Tools}
 $$
-
 $$
 \text{For } t = 0, 1, 2, \ldots:
 $$
@@ -83,8 +56,6 @@ $$
 
 ### 2.3 Turn vs Iteration 的区别
 
-文章清晰区分了两个概念：
-
 | 概念 | 定义 | 包含内容 |
 |------|------|---------|
 | **Turn（对话轮次）** | 从用户输入到Agent响应的完整周期 | 可能包含多个model inference + tool call迭代 |
@@ -93,25 +64,25 @@ $$
 ```
 TURN STRUCTURE:
 ┌────────────────────────────────────────────────────────────┐
-│                        ONE TURN                             │
-│  ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐ │
-│  │ User    │──▶│ Infer 1  │──▶│ Tool 1   │──▶│ Infer 2  │ │
-│  │ Message │   │          │   │ Execute  │   │          │ │
-│  └─────────┘   └──────────┘   └──────────┘   └──────────┘ │
-│                                   │                         │
-│                                   ▼                         │
+│                        ONE TURN                            │
+│  ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐  │
+│  │ User    │──▶│ Infer 1  │──▶│ Tool 1   │──▶│ Infer 2  │  │
+│  │ Message │   │          │   │ Execute  │   │          │  │
+│  └─────────┘   └──────────┘   └──────────┘   └──────────┘  │
+│                                   │                        │
+│                                   ▼                        │
 │                              ┌──────────┐                  │
 │                              │ Tool 2   │                  │
 │                              │ Execute  │                  │
 │                              └──────────┘                  │
-│                                   │                         │
-│                                   ▼                         │
+│                                   │                        │
+│                                   ▼                        │
 │                              ┌──────────┐                  │
 │                              │ Infer 3  │                  │
 │                              │ (Final)  │                  │
 │                              └──────────┘                  │
-│                                   │                         │
-│                                   ▼                         │
+│                                   │                        │
+│                                   ▼                        │
 │                              ┌──────────┐                  │
 │                              │Assistant │                  │
 │                              │ Message  │                  │
@@ -132,17 +103,17 @@ RESPONSES API ENDPOINTS:
 ┌───────────────────────────────────────────────────────────────┐
 │  Authentication Method     │  Endpoint URL                    │
 ├────────────────────────────┼──────────────────────────────────┤
-│  ChatGPT Login            │  https://chatgpt.com/backend-api/│
-│                           │  codex/responses                 │
+│  ChatGPT Login             │  https://chatgpt.com/backend-api/│
+│                            │  codex/responses                 │
 ├────────────────────────────┼──────────────────────────────────┤
-│  API Key (OpenAI hosted)  │  https://api.openai.com/v1/      │
-│                           │  responses                       │
+│  API Key (OpenAI hosted)   │  https://api.openai.com/v1/      │
+│                            │  responses                       │
 ├────────────────────────────┼──────────────────────────────────┤
-│  Local OSS (ollama/LM     │  http://localhost:11434/v1/      │
-│  Studio)                  │  responses                       │
+│  Local OSS (ollama/LM      │  http://localhost:11434/v1/      │
+│  Studio)                   │  responses                       │
 ├────────────────────────────┼──────────────────────────────────┤
-│  Cloud Provider (Azure)   │  {provider_endpoint}/v1/         │
-│                           │  responses                       │
+│  Cloud Provider (Azure)    │  {provider_endpoint}/v1/         │
+│                            │  responses                       │
 └───────────────────────────────────────────────────────────────┘
 ```
 

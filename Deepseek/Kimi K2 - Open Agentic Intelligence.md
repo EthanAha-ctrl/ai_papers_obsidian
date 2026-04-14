@@ -1,37 +1,16 @@
 
-
-
-
-
-
-
-# Kimi K2: Open Agentic Intelligence 技术详解
-
-## 一、论文概述与核心贡献
-
-这篇论文介绍了 Moonshot AI 的 Kimi K2，一个专注于 **Agentic Intelligence**（代理智能）的开源大语言模型。模型的核心特征包括：
-
-| 参数配置 | 数值 | 说明 |
-|---------|------|------|
-| 总参数量 | 1.04 万亿 | Mixture-of-Experts 架构 |
-| 激活参数量 | 32B | 每次前向传播仅激活 8/384 个专家 |
-| 预训练数据量 | 15.5 万亿 tokens | 高质量合成数据增强 |
-| 上下文窗口 | 128K tokens | 通过 YaRN 扩展 |
-
-### 三大核心贡献
-
+| 参数配置   | 数值             | 说明                    |
+| ------ | -------------- | --------------------- |
+| 总参数量   | 1040 B         | Mixture-of-Experts 架构 |
+| 激活参数量  | 32B            | 每次前向传播仅激活 8/384 个专家   |
+| 预训练数据量 | 15500 B tokens | 高质量合成数据增强             |
+| 上下文窗口  | 128K tokens    | 通过 YaRN 扩展            |
 1. **MuonClip 优化器**：在保持 Muon 的高 token 效率的同时，通过 QK-Clip 机制解决训练不稳定性
 2. **大规模 Agentic 数据合成管线**：系统化生成工具使用演示数据
 3. **联合强化学习框架**：结合可验证奖励（RLVR）和自我批判评价机制
-
----
-
-## 二、预训练技术详解
-
 ### 2.1 MuonClip 优化器
 
 #### 2.1.1 问题背景：Muon 的训练不稳定性
-
 Muon 优化器相较于 AdamW 具有更高的 token 效率，但在大规模训练时会出现 **Attention Logit Explosion**（注意力对数爆炸）问题。当注意力分数
 
 $$S_{\max} = \frac{1}{\sqrt{d}} \max_{\mathbf{X} \in B} \max_{i,j} \mathbf{Q}_i \mathbf{K}_j^\top$$

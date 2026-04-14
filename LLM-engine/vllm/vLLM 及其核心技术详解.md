@@ -1,13 +1,3 @@
-## 一、vLLM 概述
-
-vLLM 是一个**high-throughput** 和 **memory-efficient** 的 **LLM inference** 和 **serving engine**，由 **UC Berkeley**、**CMU**、**Stanford** 等机构的研究人员开发。该项目在 **SOSP 2023** 上发表，主要解决 **LLM serving** 过程中 **KV cache memory** 管理效率低下的问题。
-
-**主要参考：**
-- [vLLM GitHub Repository](https://github.com/vllm-project/vllm)
-- [vLLM Documentation](https://docs.vllm.ai/en/latest/)
-- [PagedAttention Paper - arXiv:2309.06180](https://arxiv.org/abs/2309.06180)
-- [vLLM Official Website](https://vllm.ai/)
-
 ## 二、核心技术：PagedAttention
 
 ### 2.1 PagedAttention 核心思想

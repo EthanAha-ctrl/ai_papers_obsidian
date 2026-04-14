@@ -1,10 +1,5 @@
-这是一篇由 **Lilian Weng** 撰写的极其详尽的技术博客，标题为 **"How to Train Really Large Models on Many GPUs?"**。这篇文章深入探讨了在**GPU**资源受限的情况下，如何通过**并行策略**、**稀疏模型架构**以及**内存优化技术**来训练超大规模神经网络（例如**GPT-3**、**Switch Transformer**等）。
-
----
-
+这是一篇由 **Lilian Weng** 撰写的极其详尽的技术博客，如何通过**并行策略**、**稀疏模型架构**以及**内存优化技术**来训练超大规模神经网络（例如**GPT-3**、**Switch Transformer**等）。
 ### 1. Training Parallelism（训练并行）
-
-当**模型参数量**超越单个**GPU**的显存容量，或者训练时间过长时，并行化是必需的。Lilian 详细剖析了四种主要的并行维度。
 
 #### 1.1 Data Parallelism (DP, 数据并行)
 这是最直观的并行方式。

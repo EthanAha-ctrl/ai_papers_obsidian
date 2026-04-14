@@ -1,10 +1,5 @@
-# MIT miBrains: 革命性多细胞整合人脑模型详解
 
-## 一、核心创新概述
-
-MIT研究人员开发的 **miBrains (Multicellular Integrated Brains)** 是首个将人脑所有主要细胞类型整合到单一培养体系中的3D体外模型。这一突破性工作发表在 *Proceedings of the National Academy of Sciences* (2023年10月17日)。
-
-### 关键技术参数表
+**miBrains (Multicellular Integrated Brains)** 是首个将人脑所有主要细胞类型整合到单一培养体系中的3D体外模型。(2023年10月17日)。
 
 | 特征 | miBrain | 传统2D培养 | 类器官(Organoid) | 动物模型 |
 |------|---------|------------|------------------|----------|

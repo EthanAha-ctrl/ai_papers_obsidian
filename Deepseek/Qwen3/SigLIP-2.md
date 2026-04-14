@@ -1,7 +1,3 @@
-SigLIP-2 代表了 **Sigmoid Loss for Language Image Pre-training** 这一范式的进一步演进与扩展。虽然 **SigLIP** 原始论文奠定了基础，但是 **SigLIP-2** 这一概念通常指代在近期 **Multimodal LLM** 和 **Vision Foundation Models** 研究中，基于 **SigLIP** 损失函数结合更大规模 **WebLI** 数据或 **ViT (Vision Transformer)** 架构升级的变体。它不仅仅是一个单一的模型，更多是指代一种为了解决 **Softmax Cross Entropy** 在大规模对比学习中的缺陷而优化的技术路线，特别是在 **Zero-shot Transfer** 和 **Linear Probing** 任务上表现的提升。
-
-以下是对 SigLIP-2 及其相关技术细节的深度解析：
-
 ### 1. Core Mechanism: Sigmoid Loss vs. Softmax Cross Entropy
 
 **SigLIP-2** 的核心依然继承自 **SigLIP**，即用 **Sigmoid Loss** 替代了传统的 **Softmax Cross Entropy**。这在技术原理上具有决定性意义。
@@ -45,12 +41,13 @@ SigLIP-2 代表了 **Sigmoid Loss for Language Image Pre-training** 这一范式
 
 相比于 CLIP，**SigLIP-2** 模型族在以下 Benchmarks 上表现出显著优势：
 
-| Benchmark (Metric) | CLIP (ViT-B/16) | SigLIP (ViT-B/16) | SigLIP-2 (ViT-L/14 / SO400M - Estimated) |
-| :--- | :---: | :---: | :---: |
-| **ImageNet-1k (Zero-shot Top-1)** | ~72.0% | ~74.5% | **> 80.0%** (ViT-L/14 scale) |
-| **ImageNet-1k (Linear Probing)** | ~75.0% | ~78.0% | **> 83.0%** |
-| **MS-COCO Image-Text Retrieval** | ~42.0% | ~44.5% | **> 48.0%** |
-| **Average Reciprocal Rank (ARR)** | Baseline | +3~5% | **+6~8%** |
+| Benchmark (Metric)                | CLIP (ViT-B/16) | SigLIP (ViT-B/16) | SigLIP-2 (ViT-L/14 / SO400M - Estimated) |
+| :-------------------------------- | :-------------: | :---------------: | :--------------------------------------: |
+| **ImageNet-1k (Zero-shot Top-1)** |     ~72.0%      |      ~74.5%       |       **> 80.0%** (ViT-L/14 scale)       |
+| **ImageNet-1k (Linear Probing)**  |     ~75.0%      |      ~78.0%       |               **> 83.0%**                |
+| **MS-COCO Image-Text Retrieval**  |     ~42.0%      |      ~44.5%       |               **> 48.0%**                |
+| **Average Reciprocal Rank (ARR)** |    Baseline     |       +3~5%       |                **+6~8%**                 |
+|                                   |                 |                   |                                          |
 
 *注意：SigLIP-2 具体数值取决于具体的 Scale (如 ViT-SO400M)，但在 **Linear Probing** 任务上，Sigmoid Loss 的优势通常比 Zero-shot 更大，因为它学到的特征更线性可分。*
 

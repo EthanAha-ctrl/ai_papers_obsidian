@@ -1,38 +1,12 @@
-我来为您详细讲解Chen Tianqi的TVM-FFI相关内容。让我先搜索一些最新的信息。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Chen Tianqi 的 TVM-FFI 技术深度解析
-
-## 一、背景与动机
-
-### 1.1 生态系统互操作性挑战
-
 现代机器学习系统面临严峻的 **interoperability** 问题，涉及众多组件的集成：
 
-| 组件类别 | 代表性系统 | 集成挑战 |
-|---------|-----------|---------|
-| ML Frameworks | PyTorch, JAX, CuPy | 内存布局、执行流、版本依赖 |
-| Kernel Libraries | FlashInfer, cuDNN, FlashAttention | 多框架绑定、AOT/JIT双重需求 |
+| 组件类别              | 代表性系统                                                          | 集成挑战                       |
+| ----------------- | -------------------------------------------------------------- | -------------------------- |
+| ML Frameworks     | PyTorch, JAX, CuPy                                             | 内存布局、执行流、版本依赖              |
+| Kernel Libraries  | FlashInfer, cuDNN, FlashAttention                              | 多框架绑定、AOT/JIT双重需求          |
 | ML Compilers/DSLs | Torch Inductor, Triton, TileLang, Mojo, cuteDSL, Helion, Hidet | Python JIT + 非Python AOT部署 |
-| Coding Agents | 自动代码生成器 | 与各种部署场景的接口一致性 |
-
-**核心问题**：每个组件都需要为每个目标环境创建特定的bindings，导致组合爆炸：
-```
-N个组件 × M个目标环境 = O(N×M)个bindings
-```
-
+| Coding Agents     | 自动代码生成器                                                        | 与各种部署场景的接口一致性              |
+**核心问题**：每个组件都需要为每个目标环境创建特定的bindings，导致组合爆炸
 ### 1.2 ABI与FFI的核心作用
 
 **ABI (Application Binary Interface)** 定义：
