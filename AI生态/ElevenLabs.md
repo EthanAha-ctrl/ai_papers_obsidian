@@ -1,53 +1,20 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ElevenLabs 深度解析：AI Audio 领域的全栈平台
-
-## 一、公司概览
-
-**ElevenLabs** 是一家总部位于 **London** 和 **Warsaw** 的 **AI Audio** 公司，由 **Piotr Dąbkowski**（前 **Google** 机器学习工程师）和 **Mati Staniszewski**（前 **Palantir** 部署策略师）于 **2022年** 联合创立。两位创始人均为 **Poland** 裔，他们创业的初始动机源自对 **Hollywood** 电影 **Polish** 配音质量低下的不满——这个看似简单的痛点驱动了一家目前估值 **$11 Billion** 的公司。
+**ElevenLabs** 是一家总部位于 **London** 和 **Warsaw** 的 **AI Audio** 公司，由 **Piotr Dąbkowski**（前 **Google** 机器学习工程师）和 **Mati Staniszewski**（前 **Palantir** 部署策略师）于 **2022年** 联合创立。两位创始人均为 **Poland** 裔，他们创业的初始动机源自对 **Hollywood** 电影 **Polish** 配音质量低下的不满——这个看似简单的痛点驱动了一家目前估值 **$11 Billion** 的公司。ElevenLabs 已经从 "单纯的 TTS 工具" 演进为一个 **full-stack AI Audio platform**
 
 - **最新融资**: 2026年2月，完成 **$500M Series D**，由 **Sequoia Capital** 领投，**a16z** 跟投，估值 **$11B**（较上一轮三倍增长）
 - **ARR**: 2025年达到 **$330M**，2026年目标翻倍至 ~**$660M**
 - **团队**: 约 **500-580人**
 - **客户**: 41% 的 **Fortune 500** 企业在使用
 
-> 参考: [Reuters](https://www.reuters.com/technology/elevenlabs-raises-500-million-11-billion-valuation-wsj-reports-2026-02-04/) | [TechCrunch](https://techcrunch.com/2026/02/04/elevenlabs-raises-500m-from-sequioia-at-a-11-billion-valuation/)
-
----
-
-## 二、核心产品矩阵
-
-ElevenLabs 已经从 "单纯的 TTS 工具" 演进为一个 **full-stack AI Audio platform**：
-
-| 产品线 | 功能描述 | 核心技术 |
-|--------|---------|---------|
-| **Text-to-Speech (TTS)** | 将文本转化为极度拟人的语音 | Eleven v3 Model |
-| **Voice Cloning** | 克隆任何人的声音 | Speaker Embedding + Few-shot Adaptation |
-| **ElevenLabs Agents** | 实时对话式 AI Voice Agent | End-to-end Voice Pipeline |
-| **AI Dubbing** | 自动将视频/音频翻译配音到 70+ 种语言 | Multilingual TTS + Voice Preservation |
-| **Scribe (STT)** | Speech-to-Text 转录 | ASR Model (Scribe v2) |
-| **Sound Effects** | AI 生成音效 | Audio Generation Model |
-| **AI Music** | AI 生成音乐 | Music Generation Model |
-| **Voice Library** | 10,000+ 预制 Voice 供选择 | Community-contributed Voices |
-
-> 参考: [ElevenLabs 官网](https://elevenlabs.io/) | [Medium 完整指南](https://medium.com/the-ai-entrepreneurs/elevenlabs-in-2026-the-complete-guide-to-v3-agents-music-and-scribe-7f3c3bdfd201)
-
----
-
-## 三、核心技术深度解析
-
+| 产品线                      | 功能描述                  | 核心技术                                    |
+| ------------------------ | --------------------- | --------------------------------------- |
+| **Text-to-Speech (TTS)** | 将文本转化为极度拟人的语音         | Eleven v3 Model                         |
+| **Voice Cloning**        | 克隆任何人的声音              | Speaker Embedding + Few-shot Adaptation |
+| **ElevenLabs Agents**    | 实时对话式 AI Voice Agent  | End-to-end Voice Pipeline               |
+| **AI Dubbing**           | 自动将视频/音频翻译配音到 70+ 种语言 | Multilingual TTS + Voice Preservation   |
+| **Scribe (STT)**         | Speech-to-Text 转录     | ASR Model (Scribe v2)                   |
+| **Sound Effects**        | AI 生成音效               | Audio Generation Model                  |
+| **AI Music**             | AI 生成音乐               | Music Generation Model                  |
+| **Voice Library**        | 10,000+ 预制 Voice 供选择  | Community-contributed Voices            |
 ### 3.1 TTS Model Architecture: 从 Autoregressive Transformer 到 Latent Diffusion
 
 ElevenLabs 的模型演进代表了整个 TTS 行业的架构转变：
