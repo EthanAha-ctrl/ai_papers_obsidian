@@ -1,19 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-# Dreamina (dreamina.capcut.com) — ByteDance 旗下的 AI 创意生成平台全面解析
-
----
-
-## 一、这家公司是谁？做什么的？
-
 **Dreamina** 是 **ByteDance（字节跳动）** 旗下的 **AI 生成式创意平台**，与 **CapCut（剪映国际版）** 深度整合。它定位为 **"All-in-One AI Creative Suite"（全功能 AI 创意套件）**，核心能力是：
 
 | 功能 | 说明 |

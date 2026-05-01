@@ -1,12 +1,4 @@
-我来帮你解析这篇文章。
-
-
-
-我来详细讲解这篇 **Cosmos Policy: Fine-Tuning Video Models for Visuomotor Control and Planning** 的文章。
-
-## 论文概览
-
-这篇论文来自 **NVIDIA** 和 **Stanford University**，提出了 **Cosmos Policy** —— 一种将大型预训练 **video generation model**（Cosmos-Predict2-2B）通过单阶段fine-tuning转化为有效 **robot policy** 的方法。核心思想是利用pretrained video models的 **spatiotemporal priors**，直接在 **latent diffusion process** 中生成 **robot actions**、**future state images** 和 **values**，无需任何架构修改。
+**Cosmos Policy** —— 一种将大型预训练 **video generation model**（Cosmos-Predict2-2B）通过单阶段fine-tuning转化为有效 **robot policy** 的方法。核心思想是利用pretrained video models的 **spatiotemporal priors**，直接在 **latent diffusion process** 中生成 **robot actions**、**future state images** 和 **values**，无需任何架构修改。
 
 ## 核心创新：Latent Frame Injection
 

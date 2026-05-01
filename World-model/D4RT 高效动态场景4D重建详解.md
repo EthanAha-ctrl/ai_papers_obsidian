@@ -1,22 +1,14 @@
-# D4RT: 高效动态场景4D重建详解
-
-## 核心洞察
-
-D4RT 是一个革命性的 **feedforward model**，用于 **dynamic 4D reconstruction and tracking**。传统方法采用 "everything, everywhere, all at once" 的思维模式，导致计算效率低下且难以处理动态场景。D4RT 的核心创新在于**将范式从密集的逐帧解码转向高效的按需查询**。
-
-参考链接：https://d4rt-paper.github.io/
-
----
+传统方法采用 "everything, everywhere, all at once" 的思维模式，导致计算效率低下且难以处理动态场景。D4RT 的核心创新在于**将范式从密集的逐帧解码转向高效的按需查询**。
 
 ## 1. 问题动机与哲学转变
 
 ### 传统方法的局限
 
-| 方法 | 主要问题 | 计算复杂度 | 动态场景支持 |
-|------|---------|-----------|-------------|
-| MegaSaM | 需要多个离线模型融合 | 测试时需优化 | ✗ |
-| VGGT | 需要多个任务专用 decoder | 中等 | ✗ |
-| SpatialTrackerV2 | 多阶段迭代优化 | 高 | ✓ |
+| 方法               | 主要问题             | 计算复杂度  | 动态场景支持 |
+| ---------------- | ---------------- | ------ | ------ |
+| MegaSaM          | 需要多个离线模型融合       | 测试时需优化 | ✗      |
+| VGGT             | 需要多个任务专用 decoder | 中等     | ✗      |
+| SpatialTrackerV2 | 多阶段迭代优化          | 高      | ✓      |
 
 传统 3D reconstruction 问的是："What is the geometry of everything, everywhere, all at once?" 这种穷举式、刚性的方法本质上不适合动态世界。
 

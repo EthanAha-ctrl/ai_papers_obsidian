@@ -1,7 +1,5 @@
-
-# 用户问题
 说说 mpq 6547A 电机驱动芯片, MA900 磁编码器芯片
-# 回答
+
 这两款芯片均来自 **Monolithic Power Systems (MPS)**，在高性能 **BLDC (Brushless DC Motor)** 控制领域（如机器人关节、精密云台、工业自动化）通常成对出现，构成闭环控制系统的核心。
 
 作为多学科 PhD，您可以将这两者的结合理解为一个典型的 **Cyber-Physical System (CPS)**：**MA900** 负责物理世界的 **State Estimation**（高精度角度传感），而 **MPQ6547A** 负责执行层的 **Actuation**（功率驱动）。

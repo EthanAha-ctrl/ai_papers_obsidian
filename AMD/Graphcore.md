@@ -1,16 +1,3 @@
-
-**Graphcore Limited** 是一家英国的 semiconductor 公司，成立于 **2016年**，总部位于英国 Bristol。公司专注于开发和设计 **AI (Artificial Intelligence)** 和 **machine learning** 的专用处理器。
-
----
-
-## 核心技术: IPU (Intelligent Processing Unit) [https://www.graphcore.ai/products/ipu](https://www.graphcore.ai/products/ipu)
-
-Graphcore 的旗舰产品是 **IPU**，这是一种专门为 **AI computation** 设计的处理器，与 **Traditional GPU** 有着根本性的架构差异。
-
-### 架构特征
-
-**1. MIMD Architecture (Multiple Instruction, Multiple Data)** 不同于 **GPU** 的 **SIMT (Single Instruction, Multiple Threads)**，IPU 采用 **MIMD** 架构，每个 processing tile 可以独立执行不同的 instruction，更适合 **sparse computation** 和 **dynamic workloads**
-
 **2. Massively Parallel Processing**
 - GC200 IPU 拥有 **1,472 processing tiles**
 - 每个 tile 包含：
