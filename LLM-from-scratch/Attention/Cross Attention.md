@@ -1,21 +1,3 @@
-我来为您详细解析LLM中的cross attention机制及其在主流开源模型中的应用。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-我来详细解析LLM中的cross attention机制及其在主流开源模型中的应用。
-
 ## 一、Cross Attention核心概念解析
 
 ### 1.1 数学定义与原理

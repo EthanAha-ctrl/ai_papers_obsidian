@@ -8,22 +8,16 @@
 ### 1. 技术定义与数学公式
 
 #### 1.1 GELU (Gaussian Error Linear Unit)
-`GELU` 是许多经典 `Transformer` 模型（如 `BERT`, `GPT-2`, `GPT-3`）的标准激活函数。它的核心思想是根据概率密度的期望来对输入进行非线性变换，期望值由输入决定。相比于 `ReLU`，`GELU` 是平滑的、非凸的，并且在负值区域允许非零梯度。
-
-**数学公式：**
 $$ \text{GELU}(x) = x \cdot P(X \le x) = x \cdot \Phi(x) $$
 其中 $\Phi(x)$ 是标准正态分布的累积分布函数 (CDF)。
-
-在工程实现中，由于 $\Phi(x)$ 计算昂贵，通常使用近似公式：
+通常近似公式：
 
 *   **精确近似 (由作者提出):**
     $$ \text{GELU}(x) \approx 0.5x \left(1 + \tanh\left(\sqrt{\frac{2}{\pi}} \left(x + \frac{0.044715x^3}{1}\right)\right)\right) $$
 
 *   **快速近似 (Tanh implementation in PyTorch/TensorFlow):**
     $$ \text{GELU}(x) \approx x \cdot \sigma(1.702x) $$
-    *(注：$\sigma$ 是 Sigmoid 函数)*
-
-从公式可以看出，`GELU` 是一个纯粹的 **Element-wise** 操作，输入 $x$ 经过变换直接输出。
+    $\sigma$ 是 Sigmoid 函数
 
 #### 1.2 SwiGLU (Swish-Gated Linear Unit)
 `SwiGLU` 是由 `Google` 在论文 *GLU Variants Improve Transformer* 中提出的，并被广泛用于 `PaLM`, `LLaMA`, `ChatGLM` 等顶尖模型。它不是一个简单的函数 $f(x)$，而是一种 **GLU (Gated Linear Unit)** 的变体，它将 `Swish` 激活函数与门控机制结合在了一起。

@@ -1,7 +1,3 @@
-深入探讨其架构设计、核心算法、实现细节以及在 **Hopper GPU** 上的优化策略。
-
----
-
 ### 1. 背景与动机
 在标准的 **Transformer** 架构中，**Multi-head Attention (MHA)** 机制在处理长序列时面临着巨大的 **KV Cache** 显存压力。因为每个 token 都需要存储其对应的 Key 和 Value 向量，随着 Context Length（上下文长度）和 Batch Size（批大小）的增加，显存占用呈线性甚至超线性增长。
 
