@@ -8,36 +8,28 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# 3D-MIX for VLA 深度讲解
+# 3D-MIX for VLA
 
-Andrej, 这篇 paper 做的事情其实很 grounded——把一个 pretrain 的 3D geometry encoder (VGGT) plug 进 modern VLA 架构，并且系统化地比较了 9 种 fusion 方式，最终发现一个简单的 **semantic-conditioned gated fusion** 胜过所有花哨方案。下面我尽量 build your intuition，公式逐变量拆解，并把 paper 没说透的 connection 也铺开。
-
----
+把 pretrain 的 3D geometry encoder (VGGT) plug 进 modern VLA 架构，比较了 9 种 fusion 方式，最终发现简单的 **semantic-conditioned gated fusion** 胜过所有花哨方案。systematic empirical comparison: 从"每个人 invent 一个 fusion" 拉回到"用 GatedFusion 这个 baseline"。
 
 ## 1. Motivation: 为什么 VLA 需要 3D？
 
-现代 VLA (OpenVLA [[1](https://openvla.github.io/)], π₀/π₀.₅ [[2](https://www.physical intelligence.company/blog/pi0)], GR00T-N1.6 [[3](https://research.nvidia.com/labs/gear/gr00t-n1_6/)]) 都建立在 MLLM 之上, 而 MLLM 的 visual pretraining 几乎全是 **2D image-text pairs**, 几何监督信号缺位。结果就是 MLLM 的 **spatial intelligence** 天花板低 —— 做抓取的时候 grasp pose、relative depth、object-to-object spatial relation 都依赖从 RGB pixel 隐式推理, 错误率高。
-
-VGGT (Visual Geometry Grounded Transformer, CVPR 2025) [[4](https://vggt.github.io/)] 恰好是一个统一 geometry encoder：输入 single/multi-view RGB，输出 patch-aligned geometric tokens (point map, depth, camera pose, point tracks 等)，这种 **geometrically grounded features** 正好是 manipulation 任务缺的料。问题是：**3D tokens 该从哪里塞、怎么塞？** 之前的工作各自搞一套，没有 systematic comparison，所以 paper 的 pilot study 就是为这件事服务的。
-
----
-
+现代 VLA 都建立在 MLLM 之上, 而 MLLM 的 visual pretraining 几乎全是 **2D image-text pairs**。结果就是 MLLM 的 **spatial intelligence** 天花板低. VGGT 统一 geometry encoder：输入 single/multi-view RGB，输出 patch-aligned geometric tokens, point map, depth, camera pose, point tracks 等
+问题是：3D tokens 该从哪里塞、怎么塞？
 ## 2. Base VLA Architecture: 两种 style 的技术拆解
 
 ### 2.1 GR00T-style (modular dual-system)
 
 ```
-RGB×V + lang ℓ  ──► MLLM (Qwen3-VL) ──► H ∈ R^{B×L×D}
+RGB×V + lang ℓ  ──► MLLM (Qwen3-VL) ──► H ∈ R^{Batch × Seq_len ×  n_dim}
                                               │
                                               ▼ cross-attention
                             noisy action A_τ ──► DiT flow-matching ──► action A
 ```
 
-- **MLLM 输出**：只用 **final-layer hidden states** H，shape 是 `B × L × D`，B 是 batch，L 是 token sequence length (image patches + lang tokens)，D 是 hidden dim。
-- **Action expert**：DiT (Diffusion Transformer) [[5](https://www.wpeebles.com/DiT)] 用 flow-matching 目标训练。训练时把 ground-truth action chunk A 与高斯噪声 ε 线性插值：
-  
+- **MLLM 输出**：只用 **final-layer hidden states** H，shape 是 `Batch × Seq_len ×  n_dim`
+- **Action expert**：DiT 训练时把 GT action chunk A 与高斯噪声 ε 线性插值：
   $$\mathbf{A}_\tau = (1-\tau)\,\boldsymbol{\epsilon} + \tau\,\mathbf{A}, \quad \tau \sim \mathrm{Beta}(\alpha,\beta), \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
-
   这里 **τ 是 flow-matching 的时间步 (上标无, 下标 τ)**, α, β 控制 τ 的分布形状 (Beta 参数), ε 是标准高斯噪声, A 是真实 action chunk `a_t, a_{t+1}, ..., a_{t+T}`. 模型预测 velocity $\mathbf{v} = \mathbf{A} - \boldsymbol{\epsilon}$, 用 MSE loss 监督。
   
 - **Cross-attention 接口**：每个 DiT layer 都对同一个 H 做 cross-attention (公式 11):
@@ -46,21 +38,8 @@ RGB×V + lang ℓ  ──► MLLM (Qwen3-VL) ──► H ∈ R^{B×L×D}
 
 ### 2.2 π-style (layer-wise coupling)
 
-π₀ / π₀.₅ 系列的设计：从 MLLM 的**最后 N_dit 层**抽取 hidden states，一一对应到 DiT 的每一层：
-
-$$\{\mathbf{H}^{(1)}, \dots, \mathbf{H}^{(N_{\mathrm{dit}})}\} = \mathrm{MLLM}_{\text{last-}N_{\mathrm{dit}}\text{-layers}}(\mathcal{I}, \ell)$$
-
-- N_dit 是 DiT 层数 (下标 dit 表示 "DiT"), 上标 (i) 是层索引。
-- 第 i 个 DiT block 接受 H^(i) 作为 cross-attention K/V (公式 13):
-  $$\mathbf{Z}^{(i)} = \mathrm{TransformerBlock}^{(i)}(\mathbf{Z}^{(i-1)}, \mathbf{H}^{(i)})$$
-
-**Intuition**：浅层 DiT 拿到浅层 MLLM features (低层 visual + syntactic)，深层 DiT 拿到深层 MLLM features (semantic intent + spatial relation)。代价是显存存 N_dit 份 hidden states，cross-attention 计算量也 ×N_dit。这正是 3D-MIX 在 π-style 上要做 layer-wise fusion 的原因。
-
----
-
+π₀ / π₀.₅ 系列的设计：从 MLLM 的最后 N_dit 层 抽取 hidden states，一一对应到 DiT 的每一层. 浅层 DiT 拿到浅层 MLLM features，深层 DiT 拿到深层 MLLM features。
 ## 3. Pilot Study: 9 种 Fusion Schemes 逐一拆解
-
-这是 paper 的核心 empirical 贡献。9 个 scheme 覆盖了 VLA pipeline 的所有可能 injection point。
 
 ### 3.1 AE-Fusion (Action Expert dual cross-attention)
 
@@ -268,25 +247,20 @@ $$\mathbf{Z}^{(i)} = \mathrm{TransformerBlock}^{(i)}(\mathbf{Z}^{(i-1)}, \mathbf
 
 ---
 
-## 7. Ablation Studies 关键洞察
+## 7. Ablation Studies
 
-### 7.1 VGGT Frozen vs. Trainable (Figure 3a)
+### 7.1 VGGT Frozen vs. Trainable
 
-冻结 VGGT 性能 ≈ 或 > fine-tune。**Intuition**: VGGT 在大规模 3D 数据 (megadepth, co3d, blendmvs 等) 上 pretrain, 已经学到 generalizable geometry representation; finetune 在小规模 robot data 上容易 overfit, 损失泛化能力。这与 CLIP visual encoder 在 robotic manipulation 中通常 frozen 的发现一致 [[6](https://github.com/openvla/openvla)]。
+冻结 VGGT 性能 ≈ > fine-tune。
+VGGT 在大规模 3D 数据 (megadepth, co3d, blendmvs 等) 上 pretrain, 已经学到 generalizable geometry representation;
+finetune 在小规模 robot data 上容易 overfit。
+这与 CLIP visual encoder 在 robotic manipulation 中通常 frozen 的发现一致.
 
-### 7.2 3D Information Sensitivity (Figure 3b)
-
-推理时把 VGGT features 替换成:
-1. **Zero vectors**: 性能显著下降
-2. **Random Gaussian noise**: 性能也下降, 甚至更剧烈
-
-**关键 takeaway**: 3D-MIX 的提升不是来自"多了 N_patches 个 token 维度", 而是来自**真正的几何信息**。如果是 dimension 增加的副作用, zero 替换不会掉这么多。这验证了 3D 几何信号的 causal role。
-
-### 7.3 Sparse Layer Fusion (π-style, Figure 3c)
+### 7.2 Sparse Layer Fusion (π-style)
 
 让 3D feature 每 k 层注入一次 (k=0 是 full layer-wise), 发现 sparse (例如 k=2 或 k=3) 性能与 full 相当, 显存显著降低。
-
-**Intuition**: 相邻 DiT layer 的 abstraction level 接近, 不需要每层都重新 fuse 3D。这是 practical deployment tip —— π-style 上用 sparse 3D-MIX 几乎不牺牲性能, 显存节省接近 1/k。
+相邻 DiT layer 的 abstraction level 接近, 不需要每层都重新 fuse 3D。
+这是 practical deployment tip —— π-style 上用 sparse 3D-MIX 几乎不牺牲性能, 显存节省接近 1/k。
 
 ---
 
@@ -330,8 +304,6 @@ in-domain 时, 2D features 已经能记住训练 distribution 的 spatial patter
 
 ## 9. 局限与可能的下一步
 
-paper 自己没展开谈, 但我看到的几个点:
-
 1. **Pilot study 只在 Qwen3-VL-4B 上做**: 9 种 fusion 选 GatedFusion 是基于 4B 的结果, 大模型 (8B+) 的最优 fusion 不一定相同。大模型本身的 spatial reasoning 可能已经更强, 3D injection 的 best practice 可能变。
 2. **VGGT 本身的局限**: VGGT 处理静态 frame, 没有 temporal geometry。manipulation 中 object motion 的预测 (例如抛物线、滑动) 需要时序 3D, VGGT 无法提供。结合 VGGT + video geometry model (DUSt3R [[12](https://dust3r.eu/)] 的 video extension) 可能是下一步。
 3. **Single fixed VGGT feature**: paper 只用 VGGT 最后层输出。VGGT 内部多层 feature (类似 ViT 的中间层) 可能携带不同粒度 geometry, 可以做 multi-scale fusion。
@@ -350,31 +322,4 @@ paper 自己没展开谈, 但我看到的几个点:
 - **3D 的价值在 OOD**: in-domain 时 3D 是 redundant, OOD 时是 generalization lever。
 - **per-channel gating 是关键**: scalar gating 不够, 要让每个 feature channel 独立选择 semantic 或 geometric source。
 
----
 
-## References (Web Links)
-
-- [1] OpenVLA: https://openvla.github.io/
-- [2] π₀ / π₀.₅: https://www.physicalintelligence.ai/blog/pi0
-- [3] GR00T-N1.6: https://research.nvidia.com/labs/gear/gr00t-n1_6/
-- [4] VGGT (CVPR 2025): https://vggt.github.io/
-- [5] DiT (Peebles & Xie, ICCV 2023): https://www.wpeebles.com/DiT
-- [6] OpenVLA GitHub: https://github.com/openvla/openvla
-- [7] Cambrian-S (arXiv 2511.04670): https://arxiv.org/abs/2511.04670
-- [8] SpatialTree (arXiv 2512.20617): https://arxiv.org/abs/2512.20617
-- [9] FiLM (arXiv 1709.07871): https://arxiv.org/abs/1709.07871
-- [10] RT-2: https://robotics-transformer2.github.io/
-- [11] Octo: https://octo-models.github.io/
-- [12] DUSt3R: https://dust3r.eu/
-- [13] (IA)³: https://arxiv.org/abs/2208.03362
-- [14] SIMPLER: https://simpler-env.github.io/
-- [15] LIBERO: https://libero-project.github.io/
-- [16] Open X-Embodiment: https://robotics-transformer-x.github.io/
-- [17] DeepSpeed ZeRO: https://www.deepspeed.ai/tutorials/zero/
-- [18] AdamW: https://arxiv.org/abs/1711.05101
-- [19] Spatial Forcing (Li et al. 2025, arXiv 2510.12276): https://arxiv.org/abs/2510.12276
-- [20] 3D-MIX GitHub (paper §): https://github.com/ZGC-EmbodyAI/3DMix-for-VLA
-
----
-
-最后一句: 这篇 paper 的核心 contribution 不是 propose 一个新 module, 而是 **systematic empirical comparison** 把社区从"每个人 invent 一个 fusion"的无序状态拉回到"用 GatedFusion 这个 baseline"。这种 pilot study 风格的 paper 在 VLA 这个快速膨胀的领域非常稀缺, 工程价值高, 我个人很喜欢这种 "let the experiments speak" 的风格。后续工作如果要 propose 新 fusion scheme, 这篇的 9 个 baseline + 2 个 benchmark 是必须 compare 的。

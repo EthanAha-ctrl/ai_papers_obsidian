@@ -9,25 +9,9 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+为了在一个大模型里同时训练各种各样不同的机器人数据，X-VLA 给每个机器人都发了一张可学习的“电子身份证”，让模型全程知道自己正在操作哪具躯体。
 
-# X-VLA：用“身份证”搞定多机器人混训
-
-用人话来总结这篇 paper (https://thu-air-dream.github.io/X-VLA/)，核心就是一句话：**为了在一个大模型里同时训练各种各样不同的机器人数据，X-VLA 给每个机器人都发了一张可学习的“电子身份证”，让模型全程知道自己正在操作哪具躯体。**
-
-下面我们拆解背后的技术直觉。
-
-## 1. 为什么多机器人混训会崩盘？
-
-现在搞 Vision-Language-Action (VLA) 模型，大家都想把各种机器人的数据混在一起训，这样模型能见多识广，泛化性强。但问题在于，这些数据源存在巨大的 **heterogeneity (异质性)**：
-- **机械臂型号不同**：有 Franka, UR5, WidowX，还有单臂和双臂。
-- **摄像头视角不同**：有 top view, wrist view, left/right view。
-- **控制接口不同**：有的用绝对位置 absolute EEF pose，有的用相对位移 relative XYZ。
-- **采样频率不同**：有 15Hz，有 30Hz。
-
-如果直接把这一锅粥的数据扔给 Transformer 跑 behavior cloning，模型直接懵逼。因为对于同一个“抓取”动作，在 Franka 15Hz 的 top view 里，和在 WidowX 30Hz 的 wrist view 里，特征分布完全是两个世界。模型分不清是视角变了，还是动作变了，最后训练 loss 炸裂，学不出通用策略。
-
-## 2. 四种解决思路的对比与 Soft Prompt 的胜出
-
+把一锅粥的数据扔给 Transformer 跑 behavior cloning，模型直接懵逼。
 为了解决异构性问题，paper 里对比了四种方法：
 
 1. **Domain-specific action projection**：在模型最后输出端，给每个机器人接一个专属的 action head。
@@ -38,13 +22,11 @@ mineru_required_version: 3.4.4
    - **直觉缺陷**：太费人工，没法 scale。而且文字描述很难精确表达硬件底层的潜在特征。
 4. **Soft Prompts (X-VLA 的方案)**：给每个数据源分配一组随机初始化的 learnable embeddings $p_i \in \mathbb{R}^k$，这组向量通过 end-to-end 训练学出来。训练时，只要输入的是 Franka 的数据，就把 Franka 专属的 Soft Prompt 塞进输入序列里；如果是 UR5，就塞 UR5 的。
 
-**Soft Prompt 的直觉**：这就是 NLP 领域 Parameter-Efficient Prompt Tuning (Lester et al. 2021, https://arxiv.org/abs/2104.08691) 在 robotics 的延伸。不用你去费劲写怎么描述这个机器人，直接让模型自己学一组向量来代表这个机器人。这组 prompt 就像“身份证”，在模型的最早期阶段就介入，告诉 Transformer：“注意，现在操作的是 Franka 的腕部视角，频率 15Hz，你要按这个设定来提取特征”。这完美保留了预训练 VLM 的表征，同时实现了 embodiment-aware。
+**Soft Prompt 的直觉**：这就是 NLP 领域 Parameter-Efficient Prompt Tuning (Lester et al. 2021, https://arxiv.org/abs/2104.08691) 在 robotics 的延伸。
+不用去费劲写怎么描述这个机器人，直接让模型自己学一组向量来代表这个机器人。
 
-## 3. 架构极简主义：抛弃 DiT，回归标准 Transformer
+构架就是纯粹的 self-attention, 不是DiT
 
-X-VLA 的架构设计 (Figure 10) 非常干净，没有花里胡哨的 AdaLN 或 MM-DiT，就是纯粹的 self-attention。这里面有个很强的直觉：**越简单的架构越能 scale**。
-
-**架构图解析：**
 ```text
 [Main View Image + Language Instruction] ---> Florence-Large VLM Encoder ---> Token A
 [Wrist View Image] -------------------------> Florence Vision Encoder only -> Token B (避开VLM的language对齐)
@@ -58,31 +40,14 @@ X-VLA 的架构设计 (Figure 10) 非常干净，没有花里胡哨的 AdaLN 或
                                           [Action Output Projection] -> Action Chunk
 ```
 
-**关键设计直觉**：
-- **分离视觉流**：主视角和语言指令送进完整的 VLM，因为固定视角的画面语义稳定，适合跟语言做 high-level reasoning。但 wrist view（手腕摄像头）画面变化快、噪声大、跟语言语义关系弱，只过 vision encoder 就行。如果强行让 wrist view 跟语言去 cross-attention，反而会把 VLM 搞坏。
+- 分离视觉流：主视角和语言指令送进完整的 VLM，因为固定视角的画面语义稳定，适合跟语言做 high-level reasoning。但 wrist view（手腕摄像头）画面变化快、噪声大、跟语言语义关系弱，只过 vision encoder 就行。如果强行让 wrist view 跟语言去 cross-attention，反而会把 VLM 搞坏。
 - **低维信号早融合**：机器人本体感觉 $R_t$ 和 flow-matching 的噪声 action $A^t$ 物理意义相近，直接 concat 加上时间 $t$ 投影成高维向量，跟图像 token 一起进 Transformer。
 
 ## 4. 公式深扒：Flow-matching 怎么生成 Action？
 
-X-VLA 采用 Flow-matching (Lipman et al. 2023, https://arxiv.org/abs/2210.02747) 来生成 action chunk，思路类似扩散模型，但路径更直。
+X-VLA 采用 Flow-matching 来生成 action chunk，思路类似扩散模型，但路径更直。
 
 核心是学一个 velocity field $v_\theta(A^t, o, t)$，把 Gaussian noise 传输到真实的 action chunk。
-
-**训练 Loss 公式：**
-$$\mathcal{L}_{\mathrm{BC}}^{\mathrm{FM}}(\theta) = \mathbb{E}_{t \sim \mathcal{U}(0,1), (o,A) \sim \mathcal{D}}\Big[\left\| v_\theta(A^t, o, t) - (A - A^0) \right\|^2\Big]$$
-
-**变量解释：**
-- $\theta$：神经网络参数。
-- $t \sim \mathcal{U}(0,1)$：从 0 到 1 的均匀分布里采样一个时间变量 $t$。
-- $o$：多模态 observation (图像、语言、proprioception)。
-- $A$：ground truth 的 expert action chunk。
-- $A^0$：从标准正态分布 $\mathcal{N}(0, I)$ 采样的纯噪声 action。
-- $A^t = (1-t)A^0 + t A$：在时间 $t$ 时的中间状态。通过线性插值，$A^t$ 沿着从 noise 到 target 的直线（Optimal Transport path）走。
-- $v_\theta(A^t, o, t)$：模型预测的速度场，告诉当前状态应该往哪个方向移动。
-- $(A - A^0)$：真实的速度方向，就是从 noise 指向 target 的直线向量。
-- $\|\cdot\|^2$：L2 范数平方，用来算预测速度和真实速度的误差。
-
-**直觉**：训练就是让神经网络学会在任何中间时刻 $t$，给当前加噪的 action $A^t$ 指出一条通往真实 action $A$ 的直线路径。推理时，从随机噪声出发，顺着模型指的路走几步，就能走到精准的 action。这比传统 diffusion 的弯曲路径好优化得多。
 
 ## 5. 实验数据表解析：为什么这么做就 work？
 

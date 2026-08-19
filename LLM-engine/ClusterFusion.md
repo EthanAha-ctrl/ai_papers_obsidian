@@ -1,52 +1,21 @@
 ---
 source_pdf: ClusterFusion.pdf
 paper_sha256: 865c3654389e19ca348ce89a82444703c874797966954a62197869d2e1c29009
-processed_at: '2026-08-03T16:08:53-07:00'
+processed_at: 2026-08-03T16:08:53-07:00
 target_folder: LLM-engine
 model: z-ai/glm-5.2
 reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+NVIDIA H100 GPU Thread Block Cluster
+Hopper GPU 新加的一个硬件特性——让同一组 SM 之间能直接共享 memory. 把原来拆开的三个 kernel（QKV Projection + Attention + Output Projection）缝成一个，中间数据完全在 on-chip 流转，不用再去显存里绕一圈。
+可以把几个 SM（最多 16 个）绑成一个"小组"，组内的 SM 之间有一条高速直连网络（叫 DSMEM），可以直接读写彼此的 shared memory。
 
-# ClusterFusion 人话版
-
-## 一句话概括
-
-现在的 LLM inference 框架把 Transformer 的计算拆成好几个小 kernel，每个 kernel 算完要把中间结果存到 GPU 的"硬盘"（HBM 显存）里，下一个 kernel 再读回来。这种来回搬运特别慢。这篇 paper 利用 NVIDIA Hopper GPU 新加的一个硬件特性——**让同一组 SM 之间能直接共享 memory**——把原来拆开的三个 kernel（QKV Projection + Attention + Output Projection）缝成一个，中间数据完全在 on-chip 流转，不用再去显存里绕一圈。
-
-## 问题出在哪
-
-LLM decoding 的时候，每生成一个 token，整个 Transformer block 都要跑一遍。但是每算一个 token 的计算量其实很小，大头时间全花在**搬数据**上。
-
-你可以想象成：GPU 里面有 100 多个工人（SM），每个工人有自己的工作台（shared memory），但工人之间没法直接递东西，要交换零件只能把东西放到仓库（HBM 显存）里，另一个人再去仓库取。仓库虽然大，但来回跑一趟很慢（470 cycles 延迟）。
-
-现有框架比如 SGLang、vLLM，它们处理一个 attention head 的流程大概是这样：
-
-```
-kernel 1 (QKV Projection) → 结果写到 HBM
-kernel 2 (Attention) → 读 HBM，算完再写 HBM  
-kernel 3 (rescale) → 读 HBM，写 HBM
-kernel 4 (Output Projection) → 读 HBM，写最终结果
-```
-
-每个 kernel 之间都有一次"写出去再读回来"的 round-trip。而且每个 kernel 启动本身还有 overhead（即使有 CUDA Graph 也消不掉）。
-
-## Hopper 给了什么新玩具
-
-NVIDIA H100 这代 GPU 加了个叫 **Thread Block Cluster** 的东西。你可以把几个 SM（最多 16 个）绑成一个"小组"，组内的 SM 之间有一条高速直连网络（叫 DSMEM），可以直接读写彼此的 shared memory。
-
-paper 里测了这条路的延迟：
-
-| 路径 | 延迟 |
-|------|------|
-| SM → HBM → SM | > 470 cycles |
-| SM → DSMEM → SM（cluster size=2）| 190 cycles |
-
-快了 2.5 倍。这就好比你跟同事之间终于可以直接递东西了，不用再绕仓库。
-
-但问题来了：NVIDIA 只给了最底层的 PTX 指令，相当于只给了你"往隔壁发一个包裹"这种原始操作，没有更高级的"把所有人的数据加起来"或者"把所有人的数据收集到一起"这种集体通信抽象。开发者要自己手写这些 pattern，门槛很高。
-
+| 路径                              | 延迟           |
+| ------------------------------- | ------------ |
+| SM → HBM → SM                   | > 470 cycles |
+| SM → DSMEM → SM（cluster size=2） | 190 cycles   |
 ## ClusterFusion 干了什么
 
 ### 1. 造了两个"集体通信"积木

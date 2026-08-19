@@ -7,40 +7,14 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# A Survey on Vision-Language-Action Models for Embodied AI - 深度讲解
-
-## 一、论文核心 motivation 与定义
-
-这篇 paper 是第一篇系统综述 **Vision-Language-Action Models (VLAs)** 的工作，由 CUHK 的 Yueen Ma 等人完成。作者提出了一个 generalized 的 VLA 定义：
-
-> A VLA is any model capable of processing multimodal inputs from vision and language to produce robot actions that accomplish embodied tasks.
-
-这与 RT-2 原始的"把 VLM 适配到机器人任务"的狭义定义不同。作者把 RT-2 这类基于 LLM/large VLM 的 VLA 称为 **Large VLAs (LVLAs)**，类似于 LLM 与 general language model 的区分。
-
-**Intuition**: VLA 的本质是三个 modality（vision $s_t$、language $p$、action $a_t$）的 fusion，对应一个 language-conditioned policy：
-
-$$\pi(a_t | p, s_{\leq t}, a_{<t})$$
-
-其中 $p$ 是 language instruction，$s_{\leq t}$ 表示到时刻 $t$ 为止的所有 state observation（含历史），$a_{<t}$ 是过去的 action 历史。这比传统 RL policy $\pi(a_t|s_t)$ 多了两个关键 conditioning：language（任务语义）+ history（时序）。
-
-Embodied AI 与 conversational AI 的本质区别就在 action modality —— 输出要作用到 physical world，所以 safety、latency、generalization 都被放大了。
-
-参考: https://github.com/yueen-ma/Awesome-VLA
-
----
-
 ## 二、Taxonomy：三大研究主线
-
-作者把 VLA 研究组织成三条线：
 
 1. **Components of VLA** (§III-A)：PVRs、dynamics learning、world models、reasoning
 2. **Low-level Control Policies** (§III-B)：直接预测 low-level action（translation、rotation、end-effector pose）
 3. **High-level Task Planners** (§IV)：把 long-horizon task 分解为 subtask 序列
 
-**Intuition**: 这是一个 hierarchical 视角。High-level planner 产出 discrete subtask $[p_1, p_2, \ldots, p_N] \sim \pi_\phi(\ell, s_t)$，low-level policy 在每个 subtask $p_i$ 下执行 continuous action $\hat{a}_t \sim \pi_\theta(\hat{a}_t | p, s_{\leq t}, a_{<t})$。这种分层结构类似 human cognition 中的 System 2（慢思考、规划）+ System 1（快反射、运动控制），后续 GR00T N1、NORA-1.5 都沿用了这一 dual-system 思想。
-
----
+High-level planner 产出 discrete subtask $[p_1, p_2, \ldots, p_N] \sim \pi_\phi(\ell, s_t)$
+low-level policy 在每个 subtask $p_i$ 下执行 continuous action $\hat{a}_t \sim \pi_\theta(\hat{a}_t | p, s_{\leq t}, a_{<t})$
 
 ## 三、Components of VLA - 细节技术拆解
 
@@ -102,13 +76,7 @@ $$\mathcal{L}_{\text{I-JEPA}} = \frac{1}{M} \sum_{i=1}^{M} \sum_j \|x_j^{(i)} - 
 
 $x_j^{(i)}$：第 $j$ 个 masked patch 的 embedding（student）；$y_j^{(i)}$：unmasked patch 的 embedding（teacher）。
 
-**Intuition**: I-JEPA 不生成像素，在 representation space 预测，所以捕获 low-level 特征比 DINO 更好。Theia 通过 distillation 把多个 vision foundation model（segmentation、depth、semantics）融合进一个 model，用更少数据更小 size 超越单独的 PVR。
-
-参考: 
-- CLIP: https://arxiv.org/abs/2103.00020
-- R3M: https://arxiv.org/abs/2203.12601
-- DINOv2: https://arxiv.org/abs/2304.07193
-- Theia: https://proceedings.mlr.press/v270/shang24a.html
+I-JEPA 不生成像素，在 representation space 预测，所以捕获 low-level 特征比 DINO 更好。Theia 通过 distillation 把多个 vision foundation model（segmentation、depth、semantics）融合进一个 model，用更少数据更小 size 超越单独的 PVR。
 
 ### 2. Dynamics Learning
 

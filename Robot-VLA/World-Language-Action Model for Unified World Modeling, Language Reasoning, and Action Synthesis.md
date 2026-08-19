@@ -10,31 +10,12 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 用人话讲讲 WLA
-
-## 一句话总结
-
-现有 robot policy 路线分两大派，一派擅长"想象未来画面"但不会说话规划，另一派擅长语言推理但不懂物理。WLA 说：**next state 其实可以拆成"文字意图"和"物理动态"两块，让一个 AR Transformer 同时搞定**，而且训练时让 world model 当老师教 backbone，推理时把老师一脚踢开，照样跑得快。
-
----
-
-## 这领域到底在吵什么
-
-要把这件事讲清楚，得先看 robot policy 这两年的两条主线：
-
-**第一条线叫 WAM**，代表做 [Cosmos Policy](https://arxiv.org/abs/2601.16163)、[Motus](https://arxiv.org/abs/2512.13030)、[Fast-WAM](https://arxiv.org/abs/2603.16666)。这类模型的核心想法是：先预测"下一帧画面长啥样"，再从画面反推 action。好处是能从海量 YouTube 第一人称视频预训练，积累 physical priors。坏处是 backbone 用的是 bidirectional DiT（跟 Stable Diffusion 一类），**天生不会生成文字**，所以遇到长 horizon 任务需要"先做 A 再做 B 再做 C"这种规划时就抓瞎。
-
-**第二条线叫 VLA**，代表 [π₀](https://arxiv.org/abs/2410.24164)、[π₀.5](https://arxiv.org/abs/2504.16054)、[OpenVLA](https://arxiv.org/abs/2406.09246)。这类直接把 VLM 拿过来当 backbone，天然会做 chain-of-thought reasoning、会分解 subtask。坏处是**完全没有 visual supervision**——模型只看到"当前帧 + 指令 → action"的 pairing，物理世界的 dynamics 全靠 action loss 间接学，信号太稀薄。
-
-WLA 的 authors 看到这两条线各自的痛点，提出一个很漂亮的 insight：
-
-> Next state 不用非得是 pixel，也不用非得是 language。它可以是**文字意图 + 物理动态**的组合。文字意图管"要干啥"，物理动态管"怎么从当前帧过渡到目标帧"。
-
-这就像你开车，脑子里不需要预演整条路的每一帧画面（WAM 那种），也不需要纯靠文字指令瞎猜方向盘怎么转（VLA 那种）。你有个 high-level plan（"先左转再右转"），还有个 low-level 的肌肉记忆知道方向盘怎么打。WLA 想学的就是这种 factorization。
-
----
-
-## 架构怎么搭的
+robot policy 路线分两大派
+一派擅长"想象未来画面"但不会说话规划
+一派擅长语言推理但不懂物理。
+WLA 说：**next state 其实可以拆成"文字意图"和"物理动态"两块，让一个 AR Transformer 同时搞定**，而且训练时让 world model 当老师教 backbone，推理时把老师一脚踢开，照样跑得快。
+Next state 不用非得是 pixel，也不用非得是 language。它可以是文字意图 + 物理动态的组合。
+文字意图管"要干啥"，物理动态管"怎么从当前帧过渡到目标帧"。
 
 三个组件拼在一起：
 

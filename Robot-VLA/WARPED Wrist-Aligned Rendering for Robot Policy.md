@@ -8,28 +8,11 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# WARPED 用人话说一遍
-
-## 这事到底难在哪
-
-你想训一个机械臂 policy，最简单直接的办法是 teleop：人拿个 VR 手柄或者 3D mouse 控制机器人，录几百段 trajectory，喂给 diffusion policy。问题是 teleop 慢得要死，录 30 段要半小时，动作还不一定自然——让人用 VR 手柄做一个 90 度旋转盒子，人手会抖，VR 手柄没有触觉反馈，录出来的 trajectory 本身就不太干净。
-
-那直接录人手操作视频不就行了？人手抓东西快、自然、丝滑，30 段视频 3 分钟就录完。但有两个 gap：
-
-**第一个 gap 叫 embodiment gap**。人手 21 个自由度，机器人 gripper 就 1 个自由度（开/合）。你录的是人手怎么动，机器人得执行的是 gripper 怎么动，这俩 motion space 完全不一样。
-
-**第二个 gap 叫 observation gap**。你头戴 GoPro 录的是 egocentric view（从头顶往下看手），但机器人部署时相机装在 wrist 上，看的是 gripper 正前方的画面。policy 训的时候见的是 A 视角，部署时遇到的是 B 视角，直接崩。
-
-之前的工作怎么解决这俩 gap？要么上多视角相机（RGB-D，多目），要么搞定制硬件（UMI 那个手持夹爪、DexCap 的 mocap 手套），要么训一个 generative model 把人手画面"翻译"成 robot 画面（RwoR 那种）。每种方案都有痛点：多视角相机谁家里没有，定制硬件又贵又难推广，generative model 不稳且没开源。
-
-WARPED 想说：**就一个头戴 GoPro，啥别的都不要，能不能从人手视频直接产出 robot wrist-view 图像 + robot trajectory？** 能。
-
----
+就一个头戴 GoPro，啥别的都不要，从人手视频直接产出 robot wrist-view 图像 + robot trajectory
 
 ## 核心思路：把人手当"几何探针"
 
-单目视频最大的问题是什么？是 depth。你从一段 2D 视频里想知道物体 3D pose，本身是 underconstrained 的。物体可以近一点小一点，也可以远一点大一点，投影到画面上长得一样。
+单目视频最大的问题是 depth。
 
 WARPED 的核心 insight 是：**当人手抓起物体那一刻，手和物体之间就建立了一堆物理约束**——
 
@@ -38,20 +21,17 @@ WARPED 的核心 insight 是：**当人手抓起物体那一刻，手和物体�
 - 抓住之后，手和物体的相对位置在移动过程中应该不变（stable grasp loss）
 - 手不能穿桌子（scene TSDF loss）
 
-这些约束加起来，就把物体的 6D pose 钉死了。你只要能 track 住手的 pose（用 HAMER 这个现成的 3D hand reconstruction 模型），再用手和物体的交互关系反推物体 pose，单目就够用。
+这些约束加起来，就把物体的 6D pose 钉死了。
+只要能 track 住手的 pose（用 HAMER 这个现成的 3D hand reconstruction 模型），再用手和物体的交互关系反推物体 pose，单目就够用。
 
 这跟用 FoundationPose 那种纯 object tracker 的根本区别在于：FoundationPose 只看物体本身，物体被手挡住一半它就懵了；WARPED 在物体被手挡住的时候，可以从手的运动推物体在动什么。实验里 Can on Plate 任务，FoundationPose 2/20，WARPED 17/20，差距就是从这里来的。
 
 ---
 
-## 整个 pipeline 像拍电影重剪
-
 你可以把 WARPED 想成一个"电影重剪"系统：
 
 **第一步：扫场景**。你拿 GoPro 在空桌面上方扫一圈，1 分钟。系统用 SfM 重建出桌面的 3D 几何，再训一个 Gaussian Splat（就是那种用一堆 3D 高斯椭球拟合场景的神经表示，渲染快、显式、可编辑）。
-
 **第二步：录人手 demo**。戴头盔，自然地做任务 30 次。3 分钟。
-
 **第三步：从 demo 里反解 3D 几何**。这是整个 pipeline 最重的一步：
 - 用 HAMER 出每帧的手 pose 初始估计，再 refine（先粗调全局位姿，再细调关节角，避免优化掉进 local minima）
 - 用 Grounding DINO + SAM2 + SAM3D + MegaPose 出物体的初始 mesh 和 pose
@@ -67,9 +47,7 @@ WARPED 的核心 insight 是：**当人手抓起物体那一刻，手和物体�
 
 ---
 
-## 为什么这套能 work
-
-我觉得有三个关键设计让 WARPED 能 work：
+三个关键设计让 WARPED 能 work：
 
 **1. Hand-object joint optimization 把单目的 underconstrained 问题变 constrained 了**
 

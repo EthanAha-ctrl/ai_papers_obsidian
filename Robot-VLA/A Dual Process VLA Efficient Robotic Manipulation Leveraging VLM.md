@@ -9,51 +9,26 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 用人话说 DP-VLA
+# DP-VLA
 
-## 一句话直觉
-
-你想想啊,你跟一个 robot 说"把那个咖啡杯放到微波炉里",你脑子里发生了什么?你可能花了一秒种 "理解" 这句话 —— 找到咖啡杯在哪、找到微波炉在哪、规划一下大致动作。然后你伸手去抓的时候,你不会每 0.1 秒就重新 "理解" 一次这句话。你只是在执行,根据手的感觉、眼睛看到的细节做微调。
+跟 robot 说"把那个咖啡杯放到微波炉里".
+你脑子里发生了什么?
+你可能花了一秒种 "理解" 这句话 —— 找到咖啡杯在哪、找到微波炉在哪、规划一下大致动作。
+然后你伸手去抓的时候,你不会每 0.1 秒就重新 "理解" 一次这句话。
+你只是在执行,根据手的感觉、眼睛看到的细节做微调。
 
 这篇 paper 就是把这个 common sense 塞进 robot 里。
 
-之前的 VLA model(比如 RT-2、OpenVLA)相当于让 robot 每一帧都重新做一遍 SAT 阅读理解 —— 每秒 5 次,每次都把整张图 + 整句话重新 digest 一遍,所以慢得要死。DP-VLA 说:你只需要在指令来的时候做一次 "理解",把理解结果压成一个 4096 维的 vector z_i,后面执行的时候反复 query 这个 vector 就行。
+之前的 VLA model(比如 RT-2、OpenVLA)相当于让 robot 每一帧都重新做一遍 SAT 阅读理解
+DP-VLA 说: 只需要在指令来的时候做一次 "理解", 把理解结果压成一个 4096 维的 vector z_i,后面执行的时候反复 query 这个 vector 就行。
 
-说白了就是把 **thinking** 和 **doing** 拆到两个 timescale 上。
+把 thinking 和 doing 拆到两个 timescale 上。
 
-## 用类比讲
-
-### 类比 1:人脑的双系统
-
-Kahneman 的《Thinking, Fast and Slow》里讲人有 System 1 和 System 2。System 1 是直觉,你开车的时候手自动打方向盘,不需要思考;System 2 是慢思考,你刚拿到驾照的时候每个动作都要想一下。
-
-- **L-Sys2 (Large System 2)** = 你刚听指令时认真想一下,用的是大模型(7B OpenVLA),相当于 prefrontal cortex
-- **S-Sys1 (Small System 1)** = 你执行的时候凭直觉,用的是小模型(BC-Transformer),相当于 limbic system + 运动皮层
-
-大脑不会每秒都把 prefrontal cortex 拉出来重跑一遍 —— 那会累死。它只在需要重新决策的时候调用 System 2。DP-VLA 就这么干。
-
-参考: https://en.wikipedia.org/wiki/Thinking,_Fast_and_Slow
-
-### 类比 2:LLM 的 KV Cache
-
-这个类比我觉得最精准。你用 LLM 的时候,prefill 阶段(把 prompt 读进去)要跑完整的 transformer forward pass,生成 KV cache。然后 decode 阶段就是反复 query 这个 KV cache 来生成 token。
-
-DP-VLA 完全 isomorphic:
 - L-Sys2 的 forward pass = **prefill**(把 instruction + 初始图像读进去,生成 z_i 这个 "KV cache")
 - S-Sys1 的每帧 forward = **decode**(用 z_i 当 cache,根据当前 observation 生成 action)
 
-OpenVLA 这种 monolithic VLA 的问题在于它每一帧都重新 prefill —— 你想,你跟 ChatGPT 说一句话,它每生成一个 token 就把你的整句话重新读一遍 —— 这不蠢吗?但是 monolithic VLA 就是这么干的。
-
-KV Cache 详解: https://lilianweng.github.io/posts/2023-01-10-reinforcement-learning/
-
-### 类比 3:公司里的 CEO 和一线员工
-
-L-Sys2 是 CEO,平时不出现,只在战略调整的时候发一个 memo(z_i)。S-Sys1 是一线员工,每天每秒都在干活,根据 memo 的大方向 + 现场的具体情况做执行。
-
+Monolithic VLA 问题在于它每一帧都重新 prefill
 CEO 不需要每 50ms 都重新发一个 memo,员工也不需要每 50ms 都请示 CEO。memo 一旦发出就够用一阵子。
-
-## 技术细节,但用人话讲
-
 ### 那个 z_i 到底是啥?
 
 $$\mathbf{z_i} = f_\ell(v_0, \ell_i)$$

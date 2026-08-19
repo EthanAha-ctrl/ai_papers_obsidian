@@ -8,73 +8,33 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# A Survey on Efficient Vision-Language-Action Models 技术解析
+1. Inference latency的瓶颈在autoregressive decoding → 用parallel/generative decoding突破
+2. Training cost的瓶颈在large-scale pretraining → 用latent action + self-supervised video pretraining
+3. Data collection的瓶颈在human teleoperation
 
-Karpathy你好！这篇paper是2025年关于Efficient VLAs的第一篇系统综述，覆盖了整个model-training-data lifecycle。让我深入构建你的intuition。
+三者环环相扣：efficient model让efficient training有意义，efficient data让efficient model能scale。未来的突破口在adaptive, embodiment-agnostic architectures + federated continual learning + self-sustaining generative ecosystems。
 
----
+## 1. Why Efficient VLAs
 
-## 1. 核心问题：为什么需要Efficient VLAs
+| Model       | Params | Latency    | Freq     |
+| ----------- | ------ | ---------- | -------- |
+| RT-2-PaLI-X | 55B    | 330-1000ms | 1-3 Hz   |
+| OpenVLA     | 7B     | 166ms      | 6 Hz     |
+| π0          | 3.3B   | 73ms       | 20/50 Hz |
+| GR00T N1    | 2.2B   | 63.9ms     | 10/50 Hz |
 
-### 1.1 VLA的基础架构
-
-VLA = Vision Encoder + LLM Backbone + Action Decoder，三个模块串行：
-
-**公式（1）Vision Encoder:**
-$$\mathbf{v} = E_{img}(I; \theta_{img})$$
-- $I \in \mathbb{R}^{H \times W \times 3}$: RGB图像
-- $\mathbf{v} \in \mathbb{R}^{N_v \times D_v}$: vision tokens序列
-- $N_v$: token数量（典型值几百到上千）
-- $D_v$: 每个token的embedding维度
-- $\theta_{img}$: encoder参数（ViT/SigLIP/DINOv2/CLIP）
-
-**公式（2）LLM Backbone:**
-$$\mathbf{h} = LLM(P(\mathbf{v}, \mathbf{l}); \theta_{LLM})$$
-- $\mathbf{l} \in \mathbb{R}^{N_l \times D_l}$: 语言tokens
-- $P(\cdot)$: projector对齐模态gap
-- $\mathbf{h} \in \mathbb{R}^{N_h \times D}$: hidden states
-
-**公式（3）Action Decoder:**
-$$\mathbf{a}_{1:T} = D_{act}(\mathbf{h}; \theta_{act})$$
-- $T$: action chunk长度
-- $D_a$: action维度（end-effector pose + gripper command）
-- 关键点：autoregressive模式下需要逐token生成
-
-### 1.2 效率瓶颈的量化
-
-Table 1的实验数据极其关键：
-
-| Model | Params | Latency | Freq |
-|-------|--------|---------|------|
-| RT-2-PaLI-X | 55B | 330-1000ms | 1-3 Hz |
-| OpenVLA | 7B | 166ms | 6 Hz |
-| π0 | 3.3B | 73ms | 20/50 Hz |
-| GR00T N1 | 2.2B | 63.9ms | 10/50 Hz |
-
-而实时机器人控制通常需要20-50Hz的控制频率。OpenVLA预训练消耗21,500 A100-GPU hours on 64-GPU cluster；π0需要10,000+小时的robot trajectories。这就是Efficient VLA范式兴起的根本原因。
-
-参考：[OpenVLA paper](https://arxiv.org/abs/2406.09246) | [π0 paper](https://arxiv.org/abs/2410.24164)
-
----
+通常20-50Hz的控制频率。
+OpenVLA pretrain used 22k A100 hours on 64-GPU cluster；
+π0需要10k hours robot trajectories。
 
 ## 2. Efficient Model Design: 三大方向
 
 ### 2.1 Efficient Attention
 
-Transformer的self-attention是 $O(n^2)$ 复杂度，n为sequence length。当action horizon长时计算量爆炸。
+self-attention是 $O(n^2)$ 复杂度，n为sequence length。当action horizon长时计算量爆炸。
 
-**SARA-RT**: up-training方法将quadratic transformer转为linear-attention，保留representational fidelity。其核心思想是让attention matrix近似为low-rank形式：
-$$\text{Attn}(Q,K,V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d}}\right)V \approx \phi(Q)(\phi(K)^T V)$$
-其中 $\phi(\cdot)$ 是kernel feature map，避免显式计算 $n \times n$ 矩阵。
-
-**Long-VLA**: phase-aware input masking。在movement phase聚焦static camera tokens，在interaction phase聚焦gripper tokens。这是基于"机器人状态有阶段性"的先验。
-
-**KV-Efficient VLA**: 将历史KV cache压缩成chunked representations：
-$$\text{KV}_{compressed} = \text{RNN}(\text{chunk}_1, \text{chunk}_2, ..., \text{chunk}_n)$$
-通过lightweight recurrent gating保留salient contexts。
-
-参考：[SARA-RT](https://ieeexplore.ieee.org/document/10610564) | [Long-VLA](https://arxiv.org/abs/2504.09766)
-
+SARA-RT: up-training方法用linear-attention，保留representational fidelity。
+KV-Efficient VLA: 将历史KV cache压缩成chunked representations. 通过lightweight recurrent gating保留salient contexts。
 ### 2.2 Transformer Alternatives: Mamba
 
 **Robo-Mamba**: 用Mamba的selective state space model替代Transformer。Mamba的核心公式：
@@ -84,15 +44,13 @@ $$y_t = C h_t$$
 
 **FlowRAM**: Mamba + Conditional Flow Matching，在high-precision manipulation中表现突出。
 
-参考：[Mamba](https://arxiv.org/abs/2312.00752) | [RoboMamba](https://arxiv.org/abs/2410.03293)
-
 ### 2.3 Efficient Action Decoding: 最核心的方向
 
 autoregressive decoding的latency是VLA部署的致命瓶颈。一个长度为 $n$ 的action chunk需要 $n$ 次串行的forward pass。
 
 #### (a) Parallel Decoding
 
-**OpenVLA-OFT**: 用bidirectional attention mask替代causal mask，single forward pass预测长度 $K$ 的action chunk：
+**OpenVLA-OFT**: 用bidirectional attention mask替代causal mask, single forward pass预测长度 $K$ 的action chunk：
 $$\mathbf{a}_{1:K} = \text{Forward}(\text{prompt}, \text{mask}_t, \text{mask}_{t+1}, ..., \text{mask}_{t+K-1})$$
 这相当于把action chunk预测当作masked language modeling任务。
 
@@ -532,58 +490,4 @@ $$\frac{d\mathbf{a}_t}{dt} = v_\theta(\mathbf{a}_t, t)$$
 5. **Self-sustaining Generative Ecosystems**: diffusion-guided synthesis from minimal seeds
 6. **Multi-agent Curiosity-driven Exploration**: shared virtual worlds
 
----
 
-## 8. 关键References
-
-**Foundational VLAs:**
-- [RT-2](https://arxiv.org/abs/2307.15818)
-- [OpenVLA](https://arxiv.org/abs/2406.09246)
-- [π0](https://arxiv.org/abs/2410.24164)
-- [GR00T N1](https://arxiv.org/abs/2503.14734)
-
-**Efficient Architecture:**
-- [RoboMamba](https://arxiv.org/abs/2410.03293)
-- [TinyVLA](https://arxiv.org/abs/2409.12514)
-- [OpenVLA-OFT](https://arxiv.org/abs/2502.19645)
-- [HybridVLA](https://arxiv.org/abs/2503.10631)
-- [SmolVLA](https://arxiv.org/abs/2506.01844)
-- [FAST](https://arxiv.org/abs/2501.09747)
-
-**Model Compression:**
-- [DeeR-VLA](https://arxiv.org/abs/2411.17465)
-- [EfficientVLA](https://arxiv.org/abs/2506.10100)
-- [BitVLA](https://arxiv.org/abs/2506.07530)
-- [SQAP-VLA](https://arxiv.org/abs/2509.09090)
-- [FlashVLA](https://arxiv.org/abs/2505.21200)
-
-**Efficient Training:**
-- [LAPA](https://arxiv.org/abs/2410.11758)
-- [Bu et al. UniVLA](https://arxiv.org/abs/2502.14420)
-- [EgoVLA](https://arxiv.org/abs/2507.12440)
-- [SimpleVLA-RL](https://arxiv.org/abs/2509.09674)
-- [ConRFT](https://arxiv.org/abs/2502.05450)
-- [RIPT-VLA](https://arxiv.org/abs/2505.02500)
-
-**Data Collection:**
-- [GraspVLA](https://arxiv.org/abs/2505.03233)
-- [RoboTwin 2.0](https://arxiv.org/abs/2506.18088)
-- [MimicDreamer](https://arxiv.org/abs/2509.22199)
-- [R2R2R](https://arxiv.org/abs/2505.09601)
-
-**Survey GitHub:**
-- [Efficient VLA Survey Project Page](https://evla-survey.github.io/)
-
----
-
-## 总结
-
-这篇survey的intuition是：VLA的efficiency不是一个单点优化，而是一个**model-training-data lifecycle的system-level co-design**问题。关键insight：
-
-1. **Inference latency的瓶颈在autoregressive decoding** → 用parallel/generative decoding突破
-2. **Training cost的瓶颈在large-scale pretraining** → 用latent action + self-supervised video pretraining
-3. **Data collection的瓶颈在human teleoperation** → 用simulation + internet video + self-exploration
-
-三者环环相扣：efficient model让efficient training有意义，efficient data让efficient model能scale。未来的突破口在adaptive, embodiment-agnostic architectures + federated continual learning + self-sustaining generative ecosystems。
-
-Karpathy，作为深度学习领域的pioneer，你应该能看到这些efficiency techniques本质上都是把scaling-centric的思路换成information-centric——同样的"intelligence"用更少bits和FLOPs表达。Eureka Labs的教育场景中，这种efficient VLA正是让embodied AI普及到普通消费者的关键。

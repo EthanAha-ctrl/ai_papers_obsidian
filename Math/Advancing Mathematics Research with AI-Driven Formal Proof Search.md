@@ -8,11 +8,7 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# AlphaProof Nexus: AI 驱动的形式化证明搜索深度解析
-
-## 1. 论文核心定位
-
-这篇论文的核心贡献是把 LLM-aided formal proof search 从 competition mathematics 推到 **research-level open problems** 的规模性评估。前面的工作比如 AlphaProof [29] 主要在 IMO 级别上证明，而 Aristotle [1] 和 Gauss [42] 主要做 AI-generated natural language proofs 的事后 formalization。这篇 paper 走的方向是用 Lean 作为 **discovery 的媒介**，而不仅仅是 verification 的媒介——这是一个重要的范式转变。
+把 LLM-aided formal proof search 从 competition mathematics 推到 **research-level open problems** 的规模性评估。前面的工作比如 AlphaProof [29] 主要在 IMO 级别上证明，而 Aristotle [1] 和 Gauss [42] 主要做 AI-generated natural language proofs 的事后 formalization。这篇 paper 走的方向是用 Lean 作为 **discovery 的媒介**，而不仅仅是 verification 的媒介——这是一个重要的范式转变。
 
 论文链接和相关资源：
 - 论文仓库: https://www.github.com/google-deepmind/alphaproof-nexus-results  

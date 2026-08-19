@@ -8,21 +8,13 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+Transformer 有三个老毛病,三个老毛病分别是:
 
-好,我换个讲法,像咱们在白板前聊天的样子,把这篇 review 的故事讲清楚。
+- **Context window 太短**。
+- **Parameters 训完就 frozen**。
+- **Energy 差好几个数量级**。
 
----
-
-## 这篇 review 在讲什么故事
-
-一句话:Transformer 有三个老毛病,人类 brain 早就有解法,工程师们过去六年在各显神通模仿 brain,现在终于有点样子了。这篇 review 就是把这场模仿秀梳理成一张地图。
-
-三个老毛病分别是:
-- **Context window 太短**。Self-attention 是 quadratic 的,sequence 一长就炸显存。大家用 sparse attention、token pruning、KV cache 凑合,但都是伤 fidelity 的折中。
-- **Parameters 训完就 frozen**。模型不 update,新知识进不去,finetune 还会 catastrophic forgetting。
-- **Energy 差好几个数量级**。Brain 用 milliwatts,靠 sparse、content-addressable、localized synaptic dynamics;Transformer 用 full-context quadratic attention + autoregressive linear-per-token KV cache。
-
-Brain 那边的解法是 **三层 memory hierarchy**:sensory memory(超短缓冲,250ms 到 3s)、working memory(4-7 chunks 的 workspace)、long-term memory(终生存储,靠 hippocampal-neocortical consolidation)。工程师们一看,这架构其实可以照搬。
+Brain 是 **三层 memory hierarchy**:sensory memory(超短缓冲,250ms 到 3s)、working memory(4-7 chunks 的 workspace)、long-term memory(终生存储,靠 hippocampal-neocortical consolidation)。
 
 ---
 
@@ -223,31 +215,6 @@ ATLAS 用 polynomial feature mapping $\phi(x) = [x, x^2, \ldots, x^p]$ 扩展 ca
 这条线如果能和 SSM / Mamba 那边的 linear-time inference 结合,可能催生一类 new architecture:既保留 attention 的 expressiveness(因为 attention = Hopfield retrieval),又能 inference-time 学 new knowledge(因为 closed-form update),还能 linear-time decode(因为 SSM framework)。Memory-augmented transformers 现在的 bottleneck 是 quadratic attention;SSM 的 bottleneck 是 fixed state 容量小。两者通过 kernelized Hopfield 中间层结合起来,可能是 next-gen long-context lifelong learner 的雏形。
 
 这条线还没有 paper,但 review 给的 hint 已经够多——ATLAS 那篇 2505.23735 的 Omega rule、Ramsauer 2020 的 Modern Hopfield、Mamba 的 selective state space,三者数学上应该有一个统一形式。值得 deep dive。
-
-参考:
-- ATLAS: https://arxiv.org/abs/2505.23735
-- Titans: https://arxiv.org/abs/2501.00663
-- Modern Hopfield Networks (Ramsauer et al., 2020): https://arxiv.org/abs/2008.02217
-- EM-LLM: https://arxiv.org/abs/2407.09450
-- ARMT: https://arxiv.org/abs/2407.04841
-- Memory Layers at Scale: https://arxiv.org/abs/2412.09764
-- NAMMs: https://arxiv.org/abs/2405.05627
-- TransformerFAM: https://arxiv.org/abs/2404.09173
-- HippoRAG: https://arxiv.org/abs/2405.14831
-- MemGPT: https://arxiv.org/abs/2310.08560
-- RETRO: https://arxiv.org/abs/2112.04426
-- Memorizing Transformer: https://arxiv.org/abs/2203.08913
-- Compressive Transformer: https://arxiv.org/abs/1911.05507
-- Transformer-XL: https://arxiv.org/abs/1901.02860
-- Memory³: https://arxiv.org/abs/2407.01178
-- HRM: https://arxiv.org/abs/2506.21734
-- LM2: https://arxiv.org/abs/2502.06049
-- MemoryLLM: https://arxiv.org/abs/2402.04624
-- R³mem: https://arxiv.org/abs/2502.15957
-- Dijksterhuis et al., 2024 (pronoun reactivates concept cells): https://www.science.org/doi/10.1126/science.ado9353
-- Pink et al., 2025 (episodic memory for long-term LLM agent): https://arxiv.org/abs/2502.06975
-- Du et al., 2025 (rethinking memory in AI): https://arxiv.org/abs/2505.00675
-- He et al., 2024 (human-inspired long-term memory survey): https://arxiv.org/abs/2411.00489
 
 ---
 

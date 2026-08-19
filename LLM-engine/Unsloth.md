@@ -1,16 +1,3 @@
-你指的应该是 **Unsloth**。它不仅**能** fine-tune LLM，而且它的核心使命就是让 LLM 的 fine-tuning 过程变得**极快**且**极省 VRAM**。
-
-为了 build your intuition，我们用第一性原理来拆解 Unsloth 到底是什么，以及它为什么能做到这一点。
-
-### 1. 第一性原理拆解：Fine-tuning 的物理瓶颈是什么？
-
-Fine-tuning 一个 LLM，本质上是在做高维空间的优化。在这个过程中，物理上的瓶颈只有两个：
-*   **Compute (计算力):** 矩阵乘法有多快。
-*   **Memory (显存):** 需要存储多少数据。
-
-在 standard fine-tuning 中，你需要把 model weights、gradients、optimizer states 全部放进 GPU VRAM。**因此**，对于一个 7B model，你可能需要 40GB-80GB 的 VRAM，这在 consumer hardware 上是 impossible 的。
-
-**为了解决 Memory 瓶颈，社区发明了 LoRA 和 QLoRA：**
 *   **LoRA:** 冻结 base weights，只训练注入的低秩矩阵。**所以** trainable parameters 大幅减少，Memory 需求下降。
 *   **QLoRA:** 把 frozen base weights 量化到 4-bit (NF4)，进一步极度压缩 Memory 占用。
 

@@ -9,11 +9,8 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# IUMENTA: Animal Digital Twin Framework 技术深度解析
-
-## 一、整体定位与核心 motivation
-
-这篇paper的核心 contribution 是构建了一个 generic、reusable 的 Animal Digital Twin (ADT) framework，名字叫 IUMENTA (Latin for livestock)。它嵌套在 Open Digital Twin Platform (ODTP) 之上，专门面向 animal research 场景。
+构建了一个 Animal Digital Twin (ADT) framework，名字叫 IUMENTA (Latin for livestock)。
+它嵌套在 Open Digital Twin Platform (ODTP) 之上，专门面向 animal research 场景。
 
 核心问题陈述：传统的 ADT 是 "piecemeal artifact"——每个研究组针对一种动物、一个 location、一个问题手工 stitch 一个 digital twin，无法 reuse。这在 Precision Livestock Farming (PLF) 中造成大量 redundancy。IUMENTA 通过 modular micro-service architecture 把这一过程标准化。
 
@@ -22,13 +19,6 @@ Motivation 层面有几个值得注意的张力：
 1. **3Rs 框架** (Replacement, Reduction, Refinement) 来自 Directive 2010/63/EU。ADT 通过 in silico simulation 帮助实现 Replacement。
 2. **Software sensor 的本质**：很多 biological variables（如 metabolic rate, energy expenditure, affective state）无法直接用 hardware sensor 测量，必须通过 indirect inference。
 3. **Experiments as Code (ExaC)** 范式：把实验的 procedure、infrastructure、documentation 全部编码为可执行形式，实现 reproducibility 和 auditability。
-
-参考链接：
-- ODTP: https://github.com/OpenDigitalTwin
-- IUMENTA: https://github.com/iumenta
-- 3Rs framework: https://www.nc3rs.org.uk/the-3rs
-
----
 
 ## 二、Software Sensor 的理论基础
 

@@ -8,15 +8,12 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# Accelerated AI Inference via Dynamic Execution Methods 深度解析
-
-Andrej, 这篇 paper 来自 Intel 团队(Haim Barad 等人),核心 thesis 是把 inference optimization 划分成两个 orthogonal 的 axis: **Model Compression**(static, approximate math) 和 **Dynamic Execution**(data-dependent, short-cut)。我把它当成一篇"taxonomy + experimental reproduction"的综述来看,真正有意思的是它把好几条加速线串在一起,讲它们共享同一种 cognitive science intuition。下面我把每个 piece 拆开讲技术细节,顺便补一些 paper 没展开的 related work,帮你 build intuition。
-
----
+把 inference optimization 划分成两个 orthogonal 的 axis
+Model Compression(static, approximate math)
+和
+Dynamic Execution(data-dependent, short-cut)。
 
 ## 1. 两套优化范式的根本区别
-
-Paper 在 Section 2 开了一个非常干净的二分法:
 
 **Model Compression** 求解的是:
 $$

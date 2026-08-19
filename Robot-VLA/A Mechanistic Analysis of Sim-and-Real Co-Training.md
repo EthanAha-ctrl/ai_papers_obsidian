@@ -7,25 +7,10 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# A Mechanistic Analysis of Sim-and-Real Co-Training — 详细解读
-
-这篇paper来自UT Austin的Yuke Zhu组 (arXiv:2509.18631, 作者Yu Lei, Minghuan Liu等), 试图打开sim-and-real co-training这个"black box", 从mechanistic的角度解释为什么co-training有效, 什么时候有效, 以及如何更好地设计co-training算法。
-
-项目主页: https://science-of-co-training.github.io/
-相关参考: 
-- Diffusion Policy: https://diffusion-policy.cs.columbia.edu/
-- MimicGen: https://mimicgen.github.io/
-- Robosuite: https://robosuite.ai/
-- Classifier-Free Guidance: https://arxiv.org/abs/2207.12598
-
----
-
 ## 1. 核心Insight: 两种内在效应
 
-这篇paper最核心的贡献是识别出co-training背后有两个独立的内在效应:
-
 **Primary Effect: Structured Representation Alignment**
+
 这又包含两个互补的属性:
 - **Representation Alignment**: source domain (sim) 和 target domain (real) 的observation representation在某个domain-invariant subspace里对齐, 这样task-relevant knowledge才能transfer
 - **Domain Discernibility**: representation同时要保留domain-specific的信息, 让action能够adapt到real world, 而不是直接从sim复制过来

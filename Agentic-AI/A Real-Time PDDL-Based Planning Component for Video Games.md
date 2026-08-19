@@ -8,13 +8,10 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# A Real-Time PDDL-Based Planning Component for Video Games - 深度解析
+能否将 **PDDL (Planning Domain Definition Language)** 这种来自 AI planning 学术界的 expressive language 直接接入 commercial video game 的 game loop，并实现 real-time playability。
+作者通过两个 case study (Iceblox 和 VBS2) 给出了 affirmative answer，并 reverse engineering 出一个通用的 planning component architecture。
 
-## Paper 核心论点
-
-这篇 paper 探讨的核心问题是：能否将 **PDDL (Planning Domain Definition Language)** 这种来自 AI planning 学术界的 expressive language 直接接入 commercial video game 的 game loop，并实现 real-time playability。作者通过两个 case study (Iceblox 和 VBS2) 给出了 affirmative answer，并 reverse engineering 出一个通用的 planning component architecture。
-
-参考: [PDDL 标准](https://helios.hud.ac.uk/scommv/IPC-2008/), [FF Planner](https://fai.cs.uni-saarland.de/hoffmann/ff.html), [GOAP / F.E.A.R. AI](https://www.gamedeveloper.com/programming/three-states-and-a-plan-the-a-i-of-f-e-a-r)
+https://en.wikipedia.org/wiki/Planning_Domain_Definition_Language
 
 ---
 

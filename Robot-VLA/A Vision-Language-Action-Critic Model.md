@@ -8,40 +8,25 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+把一个 VLM 训成 "看两张图就能判断第二张比第一张更接近任务完成" 的机器，然后用这个判断当 reward，让机械臂自己 RL。
 
-# VLAC 用人话讲
+老问题: reward 怎么定?
 
-## 一句话 version
+老路子: 每个 task 手写 reward。
+另一条路子 ([Eureka](https://arxiv.org/abs/2310.12931), [RL-VLM-F](https://arxiv.org/abs/2402.03681)): 直接问 Gemini/GPT-4V "这帧离完成有多近"。
+可是 general VLM 不懂 robot task，给静止帧乱打高分，给失败 trajectory 也会说 "做得不错"。
+而且 VLM 的评分跟时间顺序常常不单调 (第 3 帧打 0.7，第 5 帧反而打 0.4) 
 
-> 把一个 VLM 训成 "看两张图就能判断第二张比第一张更接近任务完成" 的机器，然后用这个判断当 reward，让机械臂自己 RL。
+VLAC: 训一个专门的 model，让它真懂 "task progress" 这个语义，然后当 reward 用。
 
-就这样。下面拆开讲。
+```
+你第一次玩一个新游戏 (比如魔方)，手生得很，转不好。但你 看得出来 自己是更接近还原了还是搞得更乱了。这种 "判断进度" 的能力比 "执行手法" 通用得多 — 你能跨任务、跨场景地判断 progress。
+```
 
----
+把这个 progress 判断能力 distilled 进 VLM。
+一旦 VLM 能判断 progress，它就能当 critic (输出 reward)，同时它的 representation 也能帮助 actor (输出 action)。
 
-## 为什么这事难
-
-real-world robot RL 的老问题: reward 怎么定?
-
-**老路子**: 每个 task 手写 reward。比如 "把碗放到盘子上" 这个 task，reward 可能是 "碗中心到盘子中心的距离的负数"，再加一个 "碗是否在盘子上方" 的 binary flag。听着就烦，而且换一个 task (比如扫垃圾) 这个 reward 就废了，得重写。
-
-**另一条路子** ([Eureka](https://arxiv.org/abs/2310.12931), [RL-VLM-F](https://arxiv.org/abs/2402.03681)): 直接问 Gemini/GPT-4V "这帧离完成有多近"。问题: general VLM 不懂 robot task，给静止帧乱打高分，给失败 trajectory 也会说 "做得不错"。而且 VLM 的评分跟时间顺序常常不单调 (第 3 帧打 0.7，第 5 帧反而打 0.4) — 这种 noisy reward 会让 PPO 的 advantage variance 爆炸。
-
-**还有一条** ([LIV](https://arxiv.org/abs/2306.08631), [VIP](https://arxiv.org/abs/2210.00030)): 用 CLIP embedding 距离当 reward。问题: embedding 距离是 "视觉相似度"，不是 "任务进度"。两个视觉上像但任务完全不同的 frame 距离会很小。
-
-VLAC 想做的是: **训一个专门的 model，让它真懂 "task progress" 这个语义**，然后当 reward 用。
-
----
-
-## 核心 bet
-
-Paper 里反复讲一个观察，我用类比翻译:
-
-> 你第一次玩一个新游戏 (比如魔方)，手生得很，转不好。但你 **看得出来** 自己是更接近还原了还是搞得更乱了。这种 "判断进度" 的能力比 "执行手法" 通用得多 — 你能跨任务、跨场景地判断 progress。
-
-VLAC 的 bet 就是: **把这个 progress 判断能力 distilled 进 VLM**。一旦 VLM 能判断 progress，它就能当 critic (输出 reward)，同时它的 representation 也能帮助 actor (输出 action)。
-
-这是跟 RLHF 里 "reward model 和 policy 分离" 不同的设计哲学 — 这里是 single network 两个 role 用 prompt 切换，本质是 weight sharing 带来的 representation transfer。
+"reward model 和 policy 分离" 不同的设计哲学 — 这里是 single network 两个 role 用 prompt 切换，本质是 weight sharing 带来的 representation transfer。
 
 ---
 
@@ -68,7 +53,7 @@ $$
 - 同样 $\Delta t = 5$ 帧，在 trajectory 开头 (i=10, T=100) 占 5/90 ≈ 5.5% progress，在接近结尾 (i=90, T=100) 占 5/10 = 50% progress
 - 这模拟了 "任务接近完成时，同样物理动作对应更大的 semantic progress"
 
-**关键设计**: 这个 label **跟 trajectory 全局起点无关**。任何 sub-segment 都自包含地定义了 progress。所以人手视频 ([Ego4D](https://arxiv.org/abs/2110.07058)) 和机械臂视频 ([Bridge](https://arxiv.org/abs/2308.12952), [DROID](https://arxiv.org/abs/2403.12917)) 可以在同一个 objective 下训，因为 progress 这个语义跟 action space 无关 — 人手的 "把杯子拿起来" 和机械臂的 "把杯子拿起来"，progress 的语义是一样的，虽然 action 维度完全不同。
+这个 label **跟 trajectory 全局起点无关**。任何 sub-segment 都自包含地定义了 progress。所以人手视频 ([Ego4D](https://arxiv.org/abs/2110.07058)) 和机械臂视频 ([Bridge](https://arxiv.org/abs/2308.12952), [DROID](https://arxiv.org/abs/2403.12917)) 可以在同一个 objective 下训，因为 progress 这个语义跟 action space 无关 — 人手的 "把杯子拿起来" 和机械臂的 "把杯子拿起来"，progress 的语义是一样的，虽然 action 维度完全不同。
 
 ### 四个数据构造 trick
 

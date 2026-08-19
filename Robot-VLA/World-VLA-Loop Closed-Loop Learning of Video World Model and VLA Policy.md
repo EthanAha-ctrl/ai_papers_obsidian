@@ -8,58 +8,29 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+让 world model 和 policy 互相纠错、一起进化，world model 当考场，policy 当考生，考生找出考场的漏洞，把漏洞填上，再让下一版考生来考。
 
-# 人话版 World-VLA-Loop
+1. 手搭 digital twin：你自己写一个物理引擎 + 资产，看起来就不像真的，sim-to-real gap 大。
+2. Gaussian Splatting: 精度高但只能拍过的场景能用，没见过的角落就崩，RL 根本不敢探索。
+3. Video world model, Cosmos-Predict 2 这类：用 diffusion 生成视频，泛化好，但有个致命问题。
 
-好，那我把刚才那堆术语全压成大白话再讲一遍。但有几个数学骨架我还是得留，因为光讲故事你 build 不了真正的 intuition——光知道"joint training 有用"不够，你得知道**为什么 reward head 反过来能让 video 生成变准**，这个机制才是这篇 paper 的灵魂。
-
----
-
-## 一句话版
-
-想教机器人 RL，但在真机上跑几千次 rollout 太贵也太危险。于是用 video world model 当虚拟考场来跑 rollout，可现在的 video world model 有个毛病——你给它一个明显错误的 action，它还是给你 hallucinate 出"成功"的视频。这篇 paper 的解法是：**让 world model 和 policy 互相纠错、一起进化**，world model 当考场，policy 当考生，考生找出考场的漏洞，把漏洞填上，再让下一版考生来考。
-
-paper: https://showlab.github.io/World-VLA-Loop/
-
----
-
-## 痛点到底是什么，用人话讲
-
-想象你训练了一个机器人 policy，想用 RL 让它变得更强。RL 需要什么呢？需要它自己试错几千次，每次试完告诉你成功还是失败，拿到 reward 信号再更新参数。
-
-问题是，真机上试错一次要几秒钟，加上失败后还得人去把杯子扶起来 reset，再来一遍。想跑 500 次 rollout，你博士毕业了都还没跑完。π0.6 (https://arxiv.org/abs/2511.14759) 那种真机 RL 是有钱有人能搞，普通 lab 玩不起。
-
-所以大家都想做"虚拟考场"——simulator。simulator 老三条路：
-
-1. **手搭 digital twin**：你自己写一个物理引擎 + 资产，看起来就不像真的，sim-to-real gap 大。
-2. **3D 重建**（Gaussian Splatting 那类，如 https://arxiv.org/abs/2509.00086）：精度高但只能拍过的场景能用，机器人一旦探索到没见过的角落就崩，RL 根本不敢探索。
-3. **Video world model**（Cosmos-Predict 2 这类，https://arxiv.org/abs/2511.00062）：用 diffusion 生成视频，泛化好，但有个致命问题。
-
-致命问题看 Figure 2 就一目了然：你给 Cosmos-Predict 2 一个 action，说"机械臂往左偏一点去抓杯子"——这个 action 是错的，明显抓不到。但 video model 还是给你生成了一个"成功抓住杯子"的视频。它为什么会这样？因为它在大规模 video 数据上预训练过，视觉先验告诉它"机械臂靠近杯子 → 抓住 → 拿起来"这种 sequence 很常见，它就脑补了一条成功 trajectory，完全无视你给的 action 是错的。
-
-**用这种 world model 当 RL simulator，policy 直接 reward hacking**——它会学会"做什么 action 都行反正都成功"，最后学出一堆废动作。
-
----
-
-## 三个核心 trick
-
-这篇 paper 用了三招解决这个 hallucination 问题。每一招都不复杂，但合起来效果很猛。
+给 Cosmos-Predict 2 一个 action，说"机械臂往左偏一点去抓杯子"——这个 action 是错的，明显抓不到。
+但 video model 还是给你生成了一个"成功抓住杯子"的视频。
 
 ### Trick 1: Near-success 数据（SANS dataset）
 
-SANS = Success And Near-Success。除了成功 trajectory，他们还专门收集"差一点点就成功"的 trajectory——比如机械臂擦着杯子边缘过去没抓住，或者抓的位置偏了一两厘米。
+SANS = Success And Near-Success。
+除了成功 trajectory，他们还专门收集"差一点点就成功"的 trajectory——比如机械臂擦着杯子边缘过去没抓住，或者抓的位置偏了一两厘米。
+hard negative mining
 
-为什么这个特别关键？你想想，纯成功数据训练出来的 world model，它见过的 action 全是"对的动作"。当你给它一个"几乎对但差一点点"的 action 时，它不知道这其实会失败，就用 visual prior 脑补成成功。
+数据怎么来？ManiSkill 里他们用一个简单 controller 收 success，然后扰动 pose 造 failure，或者直接跑 policy 收它自然失败。
+LIBERO 和 real-world 里就用 OpenVLA-OFT 自己跑失败 case，加上人 teleoperation 造一些 plausible 的失败。
+Real-world 10Hz，每 task 大概 50 success + 50 near-success。
 
-但如果你把大量"几乎对但失败"的 case 喂给它，它就被迫去学那个 fine-grained 的空间关系：gripper 中心距离杯把 2 厘米 → 成功；距离 4 厘米 → 失败。这就是 hard negative mining 的思路——你拿最难区分的 case 去逼模型学细的东西。
+### Trick 2: Reward prediction head (joint training)
 
-数据怎么来？ManiSkill（https://arxiv.org/abs/2410.00425）里他们用一个简单 controller 收 success，然后扰动 pose 造 failure，或者直接跑 policy 收它自然失败。LIBERO 和 real-world 里就用 OpenVLA-OFT（https://arxiv.org/abs/2502.19645）自己跑失败 case，加上人 teleoperation 造一些 plausible 的失败。Real-world 10Hz，每 task 大概 50 success + 50 near-success。
-
-这里其实有个跟你之前一直强调的 "data quality > data quantity" 完全一致——100 条精心挑选的 near-success 比几千条 success 信息量大得多，因为它们定义了决策边界在哪。
-
-### Trick 2: Reward prediction head（joint training）
-
-这是个非常巧的设计。Cosmos-Predict 2 原本只是个 video generator——输入历史帧 + action，输出未来帧。World-VLA-Loop 在 DiT 输出的 latent 上加了一个轻量 MLP，让它额外预测一个 scalar reward：
+Cosmos-Predict 2 原本只是个 video generator——输入历史帧 + action，输出未来帧
+World-VLA-Loop 在 DiT 输出的 latent 上加了一个轻量 MLP，让它额外预测一个 scalar reward：
 
 $$\hat{r}_t = \phi(z_t)$$
 
@@ -87,69 +58,50 @@ $$\mathcal{L} = \mathcal{L}_{flow} + \lambda \sum_{t=1}^{T} \|\hat{\mathbf{r}}_t
 
 ### Trick 3: Closed-loop co-evolution
 
-前面两个 trick 都还是"一次训练"的范畴。这个 trick 才是 paper 的标题"Loop"的来源。
+Step 0：用 SANS dataset 训了 world model v1，然后让 policy 在 world model v1 里跑 RL。但 policy 会探索出新的 failure mode
+Step 1：把 RL 后的 policy 拿到真实环境 rollout，收集它的新失败 case（背面抓取失败的视频），加回 SANS dataset
+重新 fine-tune world model 得到 v2，v2 现在懂"背面抓取会失败"
+再让 policy 在 v2 里跑 RL，这次 policy 就没法 hack 这个 reward 了，得改抓正面
+Real-world 数字：SFT base 13.3% → iter 1: 36.7% → iter 2: 50.0%。每轮都有显著提升
 
-想象 Step 0：你用 SANS dataset 训了 world model v1，然后让 policy 在 world model v1 里跑 RL。policy 学会了在 world model v1 覆盖的 failure mode 上不犯错。但 policy 会探索出**新的 failure mode**——比如它学会抓杯子的背面（因为 world model v1 没见过背面抓取，给 reward 1，policy 就 reward hacking 了）。
+理论上多轮迭代应该收敛到 policy 找不到 world model 的盲点为止
 
-Step 1：你把 RL 后的 policy 拿到真实环境 rollout，收集它的新失败 case（背面抓取失败的视频），加回 SANS dataset。重新 fine-tune world model 得到 v2，v2 现在懂"背面抓取会失败"。再让 policy 在 v2 里跑 RL，这次 policy 就没法 hack 这个 reward 了，得改抓正面。
-
-Real-world 数字：SFT base 13.3% → iter 1: 36.7% → iter 2: 50.0%。每轮都有显著提升。
-
-这个动态跟 LLM RLHF 里"用新 policy 的 generation 重新训 reward model"是同构的。policy 是 reward model 的对抗者，reward model 是 policy 的 verifier，两者一起演化。理论上多轮迭代应该收敛到 policy 找不到 world model 的盲点为止。
-
----
-
-## 框架怎么转起来（Figure 3 的人话版）
+## 框架
 
 四个 phase，循环往复：
 
-1. **收数据**：ManiSkill / LIBERO / real-world 都收 success + near-success，带 action 和 sparse reward。ManiSkill 大规模 35k pairs / 23 tasks 用来 pretrain。
-2. **训 world model**：在 ManiSkill SANS 上 pretrain Cosmos-Predict 2 + reward head，学到 Franka 机器人 + action 的基础物理关系。然后每个新 task 用 < 100 条 fine-tune。
-3. **跑 RL**：把 world model 当 simulator，OpenVLA-OFT 在里面 rollout，用 GRPO 更新 policy。reward 从 world model 的 reward head 取，threshold 0.9 二值化。
-4. **闭环**：RL 后的 policy 在真实环境 rollout，新失败 case 加回 SANS，重训 world model，回到 phase 3。
+1. 收数据：ManiSkill / LIBERO / real-world 都收 success + near-success，带 action 和 sparse reward。ManiSkill 大规模 35k pairs / 23 tasks 用来 pretrain。
+2. 训 world model：在 ManiSkill SANS 上 pretrain Cosmos-Predict 2 + reward head，学到 Franka 机器人 + action 的基础物理关系。然后每个新 task 用 < 100 条 fine-tune。
+3. 跑 RL：把 world model 当 simulator，OpenVLA-OFT 在里面 rollout，用 GRPO 更新 policy。reward 从 world model 的 reward head 取，threshold 0.9 二值化。
+4. 闭环：RL 后的 policy 在真实环境 rollout，新失败 case 加回 SANS，重训 world model，回到 phase 3。
 
-实现细节里有点意思的是 request-response 架构：world model 跑在 backend server 上，policy 生成 action chunk 发请求，server 分配 worker 生成下一帧 + reward。单卡 H100 生成 24 帧 batch 大概 7 秒，一个 task RL 50 步收敛，总共 30 小时。对比真机 RL 50 步根本不可能——这是本质上的效率差异。
-
----
 
 ## 结果有多好
 
-### World model 生成质量（Table 1）
+### World model 生成质量
 
-| Scenario | SSIM | PSNR | LPIPS | MSE |
-|----------|------|------|-------|-----|
-| LIBERO | 0.90 | 26.57 | 0.031 | 0.0024 |
-| Real-World | 0.91 | 29.61 | 0.059 | 0.0019 |
+| Scenario   | SSIM | LPIPS |
+| ---------- | ---- | ----- |
+| LIBERO     | 0.90 | 0.031 |
+| Real-World | 0.91 | 0.059 |
 
-SSIM 0.9+ 是结构几乎完美，LPIPS 0.05 以下人眼分不出。Real-world 比 LIBERO 还略好，反直觉但说得通——real-world texture 更丰富，pretrained prior 更适配。
+SSIM 0.9+ 是结构几乎完美，LPIPS 0.05 以下人眼分不出
+Real-world 比 LIBERO 还略好，反直觉但说得通——real-world texture 更丰富，pretrained prior 更适配。
 
-### Alignment（Table 2）
+### Alignment
 
 visual alignment 平均 87.9%，reward alignment 平均 86.4%。两者高度一致——证明 reward head 和 generator 学到了一致的 success/failure 表示。Real-world 的 reward alignment 95% 比 visual 90% 还高，说明 reward head 可能比 pixel-level 判断更鲁棒，学到了某种 abstracted success signal。
 
-### Policy RL 提升（Table 3）
+### Policy RL 提升
 
 最 striking 的数字：real-world SFT base 13.3% → RL 后 36.7%，绝对提升 23.4%，相对提升 176%。LIBERO 上各 task 提升 6-24%。LIBERO-100（长 horizon >200 帧）没做——因为 autoregressive video model 200 帧后 quality drift，这是公开 limitation。
 
-### Ablation（Table 4）
+### Ablation
 
 去掉 near-success data：visual alignment 85-95% → 60-65%。去掉 reward head：85-95% → 60-70%。用 Qwen3-VL 当 judge：50-55%，**比 random 还差**——证明外部 VLM reward 在 video world model 上根本不靠谱。
 
----
+## Limitation
 
-## 跟你 Tesla 时期工作的直接关联
-
-你之前在 Tesla 推 world model for autonomous driving。这篇 paper 是 manipulation 版的同一思路。最核心的 insight 一模一样：**纯生成不够，必须 grounded 到 task reward 才能当 simulator**。
-
-在 driving 里，reward 可能是 collision / lane deviation / comfort。这篇 paper 用 binary task success，driving 里换 continuous risk metric 就行。架构上完全可以 transfer——把 Cosmos-Predict 2 换成 driving video model，把 reward head 换成 driving metric predictor，把 action 换成 steering/acceleration。如果 Tesla 的 world model 还在迭代，joint training + closed-loop SANS augmentation 是个非常直接可借鉴的方案。
-
-特别值得注意的一点：driving 里"差一点点就出事"的 near-miss 数据本身就极有价值，跟 SANS 的 near-success 概念完全对应。Tesla 拥有车队数据天然就有海量 near-miss——这个数据怎么用进 world model 训练，这篇 paper 给了一个非常具体的 recipe。
-
----
-
-## 局限和延伸思考
-
-paper 自己承认的：
 1. **Long-horizon**：autoregressive video >200 帧质量 drift。需要更长 context video backbone（Mamba / hierarchical latent）。
 2. **Sparse reward**：只有终态 binary。改成 dense per-step reward 收敛更快，但标注成本高。
 

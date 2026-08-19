@@ -8,11 +8,7 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# AdaEvolve：将 LLM-driven Evolution 重构为 Hierarchical Adaptive Optimization
-
-## 1. 论文核心动机与问题定位
-
-这篇 paper 来自 UC Berkeley 的 Mert Cemri 等人，与 Bespoke Labs 合作。核心 insight 非常优雅：当前 LLM-guided evolutionary search（如 FunSearch、AlphaEvolve、OpenEvolve）存在一个 critical disparity——**mutation operator（LLM）极其 sophisticated，但控制 LLM 的 search algorithm 却惊人地 primitive**。
+当前 LLM-guided evolutionary search（如 FunSearch、AlphaEvolve、OpenEvolve）存在一个 critical disparity——**mutation operator（LLM）极其 sophisticated，但控制 LLM 的 search algorithm 却惊人地 primitive**。
 
 具体来说，OpenEvolve 这类系统依赖 static schedules：固定的 mutation rate、固定的 island count、固定的 prompt template、uniform resource allocation。这导致两个问题：
 

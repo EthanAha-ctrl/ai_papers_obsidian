@@ -9,40 +9,9 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# Agent Skill Framework 在 Small Language Models 上的潜力分析
 
-Andrej，这篇 paper 触及了一个当下非常实际的问题：**当工业场景无法依赖 GPT-4o / Claude 这类 proprietary API 时，Agent Skill paradigm 是否仍然成立？** 答案是 partial yes，并且 paper 给出了相当精细的 scaling law 边界。我从 intuition 层面给你拆解。
-
----
-
-## 1. Motivation：为什么 Agent Skill 值得在 SLM 上重新审视
-
-Agent Skill 概念最早由 Anthropic Claude 团队提出（[Anthropic Agent Skills blog](https://www.anthropic.com/engineering/agent-skills)），现在 GitHub Copilot、LangChain（[DeepAgents](https://github.com/langchain-ai/deepagents)）、OpenAI 都官方支持。它在 huge LLM 上的效果是明确的：reduce hallucination、boost tool selection、compress context window。
-
-但工业部署有两层硬约束：
-- **Data security**：金融、保险、军事场景不能把 PII / claim 数据发到 OpenAI
-- **GPU budget**：即使能跑开源模型，80B 模型在 production latency 下 VRAM 占用极其昂贵
-
-Paper 的核心 question 就是：**Agent Skill 的 benefit 是否 transferable 到 270M–80B 的 open-source SLMs？在哪一个 scale 上开始 work？**
-
----
-
-## 2. Agent Skill 的 mental model
-
-你可以把它理解成一个 **progressive disclosure 的 POMDP controller**。和 RAG 的本质区别在于：
-
-| 维度 | RAG | Agent Skill |
-|------|-----|-------------|
-| 知识表示 | vector embeddings in DB | raw text/markdown (SKILL.md) |
-| 检索方式 | similarity top-k | LLM 自己决定是否 reveal |
-| Context length | rigid expansion | tightly bounded effective length |
-| Reasoning burden | low (retrieval is mechanical) | high (LLM must decide what to load) |
-
-这意味着 Agent Skill 把 **retrieval 的智能要求从 retriever 转移到了 LLM 本身**——这是为什么它在 SLM 上会出问题的根本原因。SLM 的 ICL 和 reasoning 能力弱，progressive disclosure 反而变成负担。
-
----
-
-## 3. POMDP 形式化（这是 paper 最漂亮的部分）
+Agent Skill 的 benefit 是否 transferable 到 270M–80B 的 open-source SLMs？在哪一个 scale 上开始 work？
+## 3. POMDP 形式化
 
 作者把 Agent Skill 抽象为 augmented POMDP：
 

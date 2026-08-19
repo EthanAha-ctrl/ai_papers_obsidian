@@ -8,41 +8,16 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# RL-VLA Survey 深度解读
+Table I (representative RL-VLA works 总结) 
+和
+Table II (manipulation benchmarks) 是最有价值的 quick reference。
+Section VII 的 open challenges 指明了最有前景的 future direction, 特别是 model-based RL for VLA, long-horizon tasks, 和 safe real-robot training。
 
-这篇 paper 是 2025 年 12 月发表的综述, 系统性地梳理了 **Reinforcement Learning of Vision-Language-Action (VLA) models for robotic manipulation** 这个新兴领域。我帮你 build intuition, 从 motivation 到 architecture 到 deployment 全链路梳理。
+## I. Why RL?
 
----
-
-## I. 核心 Motivation: 为什么 VLA 需要 RL?
-
-### 1.1 VLA 的根本 limitation
-
-当前 VLA models (OpenVLA, π0, RT-2, π0.5 等) 主要依赖 **imitation learning (IL)**, 通过大规模 teleoperation datasets 获取 general visuomotor priors。这有几个根本性缺陷:
-
-1. **OOD generalization 差**: demonstrations 覆盖的 states/actions space 有限, 部署时遇到 OOD scenario 容易失败
-2. **无 failure recovery demonstrations**: 数据集大多是成功 trajectory, 机器人不知道怎么从 failure 状态恢复
-3. **纯 imitative objective**: 无法 explore 可能更优的策略
-
-Reference: [OpenVLA](https://openvla.github.io/), [π0](https://www.physicalintelligence.company/blog/pi0), [RT-2](https://robotics-transformer2.github.io/)
-
-### 1.2 RL 的价值 proposition
-
-RL 通过 **self-exploration** 和 **result-driven optimization** 弥补这些缺陷。在 LLM 领域 RL post-training (如 DeepSeek-R1 用 GRPO) 已经证明可以显著提升 reasoning 能力, 这个 insight 自然地 transfer 到 VLA:
-
-$$J(\pi) = \mathbb{E}_{\tau \sim \pi} \left[ \sum_{t=0}^{T} \gamma^t r(s_t, a_t) \right]$$
-
-**变量解释**:
-- $\pi = \pi_\theta(a_t | s_t)$: policy, 参数化为 $\theta$ (神经网络 weights)
-- $\tau = (s_0, a_0, s_1, a_1, \ldots)$: trajectory, 由 policy $\pi$ 在 environment 中 rollout 产生
-- $T$: task horizon (episode 最大步数)
-- $\gamma \in [0, 1)$: discount factor, 折扣未来 reward (越远 future reward 越不重要)
-- $r(s_t, a_t)$: reward function, 在 state $s_t$ 执行 action $a_t$ 获得的即时回报
-- $\mathbb{E}_{\tau \sim \pi}$: 对 policy $\pi$ 产生 trajectory 的期望
-
-**Intuition**: IL 最小化 $\mathcal{L}_{BC} = -\log \pi_\theta(a_{expert}|s)$, 只关心 expert 分布; RL 优化 $J(\pi)$, 关心 long-term return, 即使是非 expert 路径只要 return 高就行, 这正是 OOD 场景需要的灵活性。
-
----
+1. OOD generalization 差: demonstrations 覆盖有限, 部署时遇到 OOD scenario 容易失败
+2. 无 failure recovery demonstrations
+3. 纯 imitative objective: 无法 explore 可能更优的策略
 
 ## II. RL-VLA 的形式化: MDP 定义
 
@@ -58,7 +33,7 @@ $$s_t = (o_t^{vis}, o_t^{prop}, l_{task})$$
 
 ### 2.2 Action Space $\mathcal{A}$
 
-Action $a_t \in \mathbb{R}^d$ 由 VLA decoder 生成。关键点是 VLA 通常输出 **action chunk**:
+Action $a_t \in \mathbb{R}^d$ 由 VLA decoder 生成。关键点是 VLA 通常输出 action chunk:
 
 $$a_{t:t+k-1} = (a_t, a_{t+1}, \ldots, a_{t+k-1})$$
 
@@ -76,9 +51,7 @@ $$a_{t:t+k-1} = (a_t, a_{t+1}, \ldots, a_{t+k-1})$$
 - Simulation (Isaac Sim, MuJoCo)
 - Real-world physics (implicit, 通过 robot hardware 实现)
 
----
-
-## III. RL-VLA Architecture: Action, Reward, Transition 三大模块
+## Action, Reward, Transition 三大模块
 
 ### 3.1 Action Modeling
 
@@ -86,9 +59,9 @@ $$a_{t:t+k-1} = (a_t, a_{t+1}, \ldots, a_{t+k-1})$$
 
 #### (1) Autoregressive VLA (Token-level RL)
 
-**架构**: 类似 LLM 的 next-token prediction。Action 被 discretize 成 tokens $a = (a^{(1)}, a^{(2)}, \ldots, a^{(L)})$, VLA autoregressive 生成。
+类似 LLM 的 next-token prediction。Action 被 discretize 成 tokens $a = (a^{(1)}, a^{(2)}, \ldots, a^{(L)})$, VLA autoregressive 生成。
 
-**RL formulation**: 每个 token 对应一个 RL decision, 可以用 PPO/GRPO 等 policy gradient 方法:
+每个 token 对应一个 RL decision, 可以用 PPO/GRPO 等 policy gradient 方法:
 
 $$\nabla_\theta J(\pi) = \mathbb{E} \left[ \sum_{l=1}^{L} A_l \nabla_\theta \log \pi_\theta(a^{(l)} | s, a^{(<l)}) \right]$$
 
@@ -106,14 +79,8 @@ $$\nabla_\theta J(\pi) = \mathbb{E} \left[ \sum_{l=1}^{L} A_l \nabla_\theta \log
 
 #### (2) Generative Action VLA (Sequence-level RL)
 
-**架构**: 用 diffusion 或 flow-matching 作为 action head, 直接生成连续 action trajectory。
-
-$$a_{t:t+k-1} = \text{Denoise}(\epsilon, \text{conditioning})$$
-
-其中 $\epsilon$ 是 initial noise, 通过多步 denoising 生成 action sequence。
-
+用 diffusion 或 flow-matching 作为 action head, 直接生成连续 action trajectory。
 **挑战**: Diffusion/flow-matching 没有 explicit action probability, 传统 RL policy gradient $\nabla \log \pi$ 没法直接算。
-
 **解决方案**: 通过 reparameterization 近似概率。
 
 **$\pi_{RL}$ 的方法** (参考 [πRL paper](https://arxiv.org/abs/2510.25889)):
@@ -121,7 +88,6 @@ $$a_{t:t+k-1} = \text{Denoise}(\epsilon, \text{conditioning})$$
 引入两个变体:
 
 **(a) Flow-SDE**: 把 denoising process 建模为 discrete-time MDP。Denoising step $i \to i+1$ 视为 state transition, denoising policy $\pi_\phi(a_i | s_i)$ 可计算 probability, 满足 RL 更新要求。
-
 **(b) Flow-Noise**: 把 denoising noise prediction 作为 action, 在 noise space 计算 policy gradient。
 
 **FPO (Flow Policy Optimization)**: 用 importance sampling 改善 efficiency:
@@ -150,8 +116,6 @@ $$\nabla_\theta J \approx \mathbb{E} \left[ \frac{\pi_\theta(a|s)}{\pi_{old}(a|s
 
 ### 3.2 Reward Design
 
-Reward 是 RL 的核心 learning signal, 直接决定 policy 收敛 quality。
-
 #### (1) Intrinsic Rewards
 
 ##### a) Potential-based Reward Shaping (PBRS)
@@ -159,14 +123,12 @@ Reward 是 RL 的核心 learning signal, 直接决定 policy 收敛 quality。
 原始 reward $r(s, a, s')$ reshape 为:
 
 $$r'(s, a, s') = r(s, a, s') + \gamma \Phi(s') - \Phi(s)$$
-
-**变量解释**:
 - $r(s, a, s')$: 原始 reward
 - $\gamma$: discount factor
 - $\Phi(s)$: potential function, 衡量 state $s$ 的 "潜力"
 - $\gamma \Phi(s') - \Phi(s)$: potential difference, 鼓励 agent 移动到高 potential state
 
-**关键理论**: PBRS 不改变 optimal policy (Ng et al. 1999, [paper](https://ai.stanford.edu/~ang/papers/icml99-shaping.pdf))。这保证了我们可以安全地 shape reward 而不破坏 optimality。
+PBRS 不改变 optimal policy. 这保证了我们可以安全地 shape reward 而不破坏 optimality。
 
 $\Phi(s)$ 的设计 choice:
 - **手动设计**: distance-to-goal, energy reduction
@@ -187,7 +149,7 @@ $\Phi(s)$ 的设计 choice:
 
 ##### a) Human-aligned Rewards
 
-**RLHF** (参考 [InstructGPT](https://arxiv.org/abs/2203.02155)):
+RLHF:
 1. 收集 human preference comparisons $(a_1, a_2)$ pairs
 2. 训练 reward model $r_\phi(s, a)$
 3. 用 RL (PPO) 优化 policy w.r.t. $r_\phi$
@@ -777,56 +739,3 @@ Sim-to-real → real-world RL, 重点从 domain randomization → autonomous rec
 
 这些 tension 没有单一 silver bullet, 需要根据具体 deployment scenario 做 tradeoff。这也是为什么这个 survey 的 taxonomy 设计成 multi-dimensional (architecture + training paradigm + deployment + benchmarking) — 不同 dimension 的组合对应不同 tradeoff regime。
 
----
-
-## X. Key References
-
-- [OpenVLA](https://openvla.github.io/) - Open-source VLA on Llama 2
-- [π0 / π0.5](https://www.physicalintelligence.company/blog/pi0) - Flow-matching VLA
-- [RT-2](https://robotics-transformer2.github.io/) - Web knowledge transfer
-- [LIBERO Benchmark](https://lifelong-robot-learning.github.io/libero/)
-- [HIL-SERL](https://hil-serl.github.io/) - Human-in-the-loop RL
-- [Eureka](https://eureka-research.github.io/) - LLM reward design
-- [Dreamer](https://danijar.com/dreamer/) - World model RL
-- [DPO](https://arxiv.org/abs/2305.18290) - Direct Preference Optimization
-- [GRPO (DeepSeekMath)](https://arxiv.org/abs/2402.03300)
-- [PPO](https://arxiv.org/abs/1707.06347)
-- [SAC](https://arxiv.org/abs/1801.01290)
-- [iVideoGPT](https://thuml.github.io/iVideoGPT/)
-- [LeRobot](https://github.com/huggingface/lerobot)
-- [SERL](https://serl.readthedocs.io/)
-- [RoboTwin](https://robotwin-benchmark.github.io/)
-- [SIMPLER](https://simpler-env.github.io/)
-- [SafeVLA](https://arxiv.org/abs/2503.03480)
-- [VLA-RL](https://arxiv.org/abs/2505.18719)
-- [SimpleVLA-RL](https://arxiv.org/abs/2509.09674)
-- [Hume](https://arxiv.org/abs/2505.21432)
-- [VLA-Reasoner](https://arxiv.org/abs/2509.22643)
-- [FurnitureBench](https://furniturebench.github.io/)
-- [CurricuLLM](https://arxiv.org/abs/2406.12207)
-- [TRANSIC](https://transic-robot.github.io/)
-- [Recovery RL](https://arxiv.org/abs/2010.11430)
-- [GVL](https://arxiv.org/abs/2402.10236)
-- [VIPER](https://arxiv.org/abs/2310.07248)
-- [RoboCLIP](https://arxiv.org/abs/2310.07888)
-- [RLDG](https://arxiv.org/abs/2412.09858)
-- [GRAPE](https://arxiv.org/abs/2411.19309)
-- [DAgger/CR-DAgger](https://arxiv.org/abs/2506.16685)
-- [EmbodiedDreamer](https://arxiv.org/abs/2507.05198)
-- [World-Env](https://arxiv.org/abs/2509.24948)
-- [VLA-RFT](https://arxiv.org/abs/2510.00406)
-- [π*0.6](https://arxiv.org/abs/2511.14759)
-- [NORA-1.5](https://arxiv.org/abs/2511.14659)
-- [ConRFT](https://arxiv.org/abs/2502.05450)
-- [ReinboT](https://arxiv.org/abs/2505.07395)
-- [VLAC](https://arxiv.org/abs/2509.15937)
-- [PLD](https://arxiv.org/abs/2511.00091)
-- [SRPO](https://arxiv.org/abs/2511.15605)
-- [DeepThinkVLA](https://arxiv.org/abs/2511.15669)
-- [RobustVLA](https://arxiv.org/abs/2511.01331)
-
----
-
-这篇 survey 的核心 contribution 在于提供了一个 unified framework 理解 RL-VLA 的全 lifecycle: 从 pretraining → architecture design → training paradigm → real-world deployment → benchmarking。对 practitioner 来说, Table I (representative RL-VLA works 总结) 和 Table II (manipulation benchmarks) 是最有价值的 quick reference。对 researcher 来说, Section VII 的 open challenges 指明了最有前景的 future direction, 特别是 model-based RL for VLA, long-horizon tasks, 和 safe real-robot training。
-
-希望这个详细讲解帮到你 build intuition, Andrej! 如果想 deep dive 到某个具体方向 (比如 flow-matching RL 的 mathematical details, 或者 sim-to-real 的 specific techniques), 我可以进一步展开。

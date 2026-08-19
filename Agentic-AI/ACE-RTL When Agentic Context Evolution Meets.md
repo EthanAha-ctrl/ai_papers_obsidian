@@ -8,15 +8,12 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# ACE-RTL 深度解析：当 RTL-Specialized LLM 遇上 Agentic Framework
-
-Andrej，这篇来自 NVIDIA 的 paper 我读完之后的整体直觉是：它本质上是在做一个 **"分工"** 的工作 —— 把"领域知识"（domain knowledge）和"通用推理"（general reasoning）这两个能力分别交给最擅长它的 model，然后用一个 agentic loop 把它们 glue 起来。下面我尽量 build 你的 intuition。
+把"领域知识"（domain knowledge）和"通用推理"（general reasoning）这两个能力分别交给最擅长它的 model
+然后用一个 agentic loop 把它们 glue 起来
 
 ---
 
 ## 1. 核心洞察：两条正交路线的互补性
-
-paper 开篇就画了一张 Figure 1，对比 prior work 的两条独立 path：
 
 **(a) Domain-adapted RTL models**（RTLCoder, CraftRTL, ScaleRTL, OriGen, CodeV）：
 - 在 RTL 数据上 SFT，内化 hardware semantics
@@ -327,16 +324,3 @@ ACE-RTL 的核心 message 我觉得可以浓缩成一句：
 这其实是 Mixture-of-Experts 的 agentic 版本 —— 不是参数级 MoE，而是 capability-level MoE。对 hardware design 这种"idiom-heavy + reasoning-heavy"的 domain，这个 decomposition 比单一 model 更 work。
 
 paper 链接（CVDP）：https://arxiv.org/abs/2506.14074  
-ScaleRTL 链接：https://arxiv.org/abs/2506.05566  
-VerilogCoder 链接：https://doi.org/10.1609/aaai.v39i1.32007  
-MAGE 链接：https://arxiv.org/abs/2412.07822  
-CraftRTL 链接：https://arxiv.org/abs/2409.12993  
-Icarus Verilog: https://github.com/steveicarus/iverilog  
-vLLM: https://arxiv.org/abs/2309.06180  
-Qwen2.5-Coder: https://arxiv.org/abs/2409.12186  
-VerilogEval v2: https://arxiv.org/abs/2408.11053  
-RTL-Repo: https://arxiv.org/abs/2405.17378  
-Scaling laws (Kaplan): https://arxiv.org/abs/2001.08361  
-Chinchilla (Hoffmann): https://arxiv.org/abs/2203.15556  
-Self-Consistency (Wang et al.): https://arxiv.org/abs/2203.11171  
-AlphaCode: https://arxiv.org/abs/2203.07814

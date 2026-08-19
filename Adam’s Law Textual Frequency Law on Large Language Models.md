@@ -7,22 +7,19 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# Paper 深度解析: Adam's Law — Textual Frequency Law on Large Language Models
-
-Andrej, 这篇paper本质上是在问一个非常naive但被严重忽视的问题: **在保持语义相同的条件下, 给LLM喂"常见"的措辞还是"罕见"的措辞, 模型表现更好?** 答案非常反直觉地一致 — 高频词组合的句子几乎在所有任务上都赢。下面我尽量按你能接受的方式build up the intuition, 公式我会逐个变量拆开讲。
-
----
+在保持语义相同的条件下, 给LLM喂"常见"的措辞还是"罕见"的措辞, 模型表现更好?
+答案非常反直觉地一致 — 高频词组合的句子几乎在所有任务上都赢。
 
 ## 1. Core Insight: 为什么频率会左右LLM行为
 
-LLM的预训练本质是在拟合一个token distribution $P(w)$。Cao et al. (2024) 已经发现同义但不同措辞的prompt给LLM带来的输出quality可以差很多, 但没人系统地追究"哪个因素"。这篇paper假设:**pre-training阶段出现频率更高的措辞, 在模型的内部 representation 上更"对齐", 所以推理时更"顺滑"**。
+Cao et al.已经发现同义但不同措辞的prompt给LLM带来的输出quality可以差很多, 但没人系统地追究"哪个因素"。
+这篇paper假设: pre-training阶段出现频率更高的措辞, 在模型的内部 representation 上更"对齐", 所以推理时更"顺滑"
 
-这跟人类cognition也有connection — Desai et al. (2020) 用 fMRI/EEG 发现高频词引发更强neural activation (https://doi.org/10.1080/23273798.2019.1640496); Alexandrov et al. 2011 在 PLoS ONE 上也是类似结论 (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0022999)。所以这其实是一个 brain-LLM parallel。
+人类cognition也有connection : — fMRI/EEG 发现高频词引发更强neural activation. 所以这其实是一个 brain-LLM parallel。
+- Oh et al 发现 larger models predict rare words better — 暗示 predicting rare words 是个 harder task, larger model才扛得住;
+- He et al 证明 pre-trained models 在 token distribution follows Zipf's law 时下游性能最好。
 
-更直接的motivation来自两件事:
-- **Oh et al. 2024** (EACL) 发现 larger models predict rare words better (https://aclanthology.org/2024.eacl-long.145/) — 暗示 predicting rare words 是个 harder task, larger model才扛得住;
-- **He et al. 2025** (EMNLP) 证明 pre-trained models 在 token distribution follows Zipf's law 时下游性能最好 (https://aclanthology.org/2025.emnlp-main.1567/)。
+https://en.wikipedia.org/wiki/Zipf%27s_law
 
 这两个加起来给了一个hint: model的"舒适区"就是Zipfian的高频端。
 

@@ -8,40 +8,17 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# Attention Sink in Transformers: 一篇系统综述的深度解读
-
-## 一、Paper 整体定位与核心贡献
-
-这篇 paper 是由 Tsinghua University、Meituan LongCat Team、The University of Hong Kong 等机构合作完成的 **第一篇关于 Attention Sink (AS) 现象的系统性综述**, 综述了超过 180 篇相关研究. Paper 的 GitHub 仓库在 https://github.com/ZunhaiSu/Awesome-Attention-Sink.
-
-Paper 把整个 AS 研究领域组织为 **三个核心维度**:
+一篇关于 Attention Sink (AS) 现象的系统性综述, 综述了超过 180 篇相关研究.
+AS 研究领域组织为 **三个核心维度**:
 - **Fundamental Utilization** (基础利用): 把 AS 当作一个可被利用的现象
 - **Mechanistic Interpretation** (机制解释): 理解 AS 为什么产生、有什么功能
 - **Strategic Mitigation** (策略缓解): 系统性消除 AS 的负面影响
-
-从 Figure 3 的 publication 趋势可以看出, 研究演化呈现出明显的 **cumulative progression** (累积进展): 2023 年开始 Fundamental Utilization, 2024 年进入 Mechanistic Interpretation, 2025 年后转向 Strategic Mitigation. 这个时间线很关键, 反映了社区对 AS 的理解从 "经验性利用" 走向 "本质性消除".
-
-GitHub: https://github.com/ZunhaiSu/Awesome-Attention-Sink
 
 ---
 
 ## 二、Attention Sink 的精确定义与数学刻画
 
 ### 2.1 Preliminaries: 标准 Transformer Attention
-
-回顾标准 attention 的公式 (paper 中公式 1-2):
-
-$$
-\mathbf{Q} = \mathbf{X}\mathbf{W}^Q, \quad \mathbf{K} = \mathbf{X}\mathbf{W}^K, \quad \mathbf{V} = \mathbf{X}\mathbf{W}^V
-$$
-
-其中 $\mathbf{X} \in \mathbb{R}^{N \times D}$ 是 input sequence, $N$ 是 sequence length, $D$ 是 feature dimension, $\mathbf{W}^Q, \mathbf{W}^K, \mathbf{W}^V \in \mathbb{R}^{D \times d_k}$ 是可学习的 projection matrix, $d_k$ 是每个 attention head 的维度.
-
-$$
-\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}
-$$
-
-$\sqrt{d_k}$ 是 scaling factor, 防止 dot product 数值过大导致 softmax 进入 saturation region.
 
 ### 2.2 AS 的形式化定义
 

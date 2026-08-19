@@ -9,41 +9,8 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 人话版
-
----
-
-## 一句话说清楚
-
-现在的 LLM 有个毛病：明明该用查表解决的事，它非要用计算硬扛。这篇 paper 说，**给它装个查表模块，模型反而变聪明了，而且算力一分没多花**。
-
----
-
-## 现在的 LLM 有什么问题
-
-你给模型一句话 "Diana, Princess of Wales"，模型要花 6 层 attention + FFN 才把这个实体的"意思"拼出来。
-
-这件事很荒谬——"Diana, Princess of Wales" 是个固定短语，地球上几十亿人都知道它是谁。模型不该一层层去"推理"它，应该直接查一下就知道了。
-
-**类比**：你要算 $7 \times 8$，不应该列竖式推导，应该背九九乘法表。但现在的 LLM 天天在"列竖式算乘法"，因为没人给它乘法表。
-
----
-
-## 他们干了什么
-
-给模型装了一个叫 **Engram** 的模块，本质就是一张超大的"乘法表"——**n-gram 查表**。
-
-输入 "Princess of Wales" 这三个 token，直接 hash 一下，从一张几十亿参数的表里 O(1) 捞出一个 embedding，塞回模型。
-
-**关键**：这个查表操作不算 FLOPs。表可以无限大，算力不变。
-
----
-
-## 为什么不是简单查表就行
-
-查表有个问题：hash 会撞，"apple" 可能查到一个垃圾。而且同一个词在不同上下文意思不同（polysemy）。
-
-所以他们加了个 **gate**：模型当前 hidden state 当 Query，查回来的 embedding 当 Key/Value，算个 attention score 决定"这个查表结果我信不信"。
+Engram. 本质就是一张超大的"乘法表"——**n-gram 查表**。
+他们加了个 **gate**：模型当前 hidden state 当 Query，查回来的 embedding 当 Key/Value，算个 attention score 决定"这个查表结果我信不信"。
 
 - 查回来的是垃圾 → gate 关 → 不影响模型
 - 查回来的是有用先验 → gate 开 → 注入模型
@@ -52,20 +19,6 @@ mineru_required_version: 3.4.4
 
 ---
 
-## 为什么这个事以前没人做好
-
-其实 n-gram embedding 不是新东西，FastText 2017 年就有了。但有两个坎一直没跨过去：
-
-**第一，没人在严格公平条件下验证过它到底值不值。** 以前的工作要么加在 input layer 破坏算力公平，要么带额外模块增加 FLOPs。这篇 paper 第一次做了 iso-parameter + iso-FLOPs 的严格对照：把 MoE 的 expert 砍掉 17 个，参数挪到 Engram 表里，总参数一样、每 token 算力一样，然后比谁强。
-
-**第二，没人在系统层面把它做"便宜"了。** Engram 的查表 index 只依赖输入 token 序列，forward 还没开始就能算出来。这意味着你可以**提前**把要查的 embedding 从 CPU 内存 prefetch 过来，和 GPU 上的计算 overlap。实测 100B 参数的表全 offload 到 host memory，吞吐只掉 2.8%。
-
-这两件事加起来，让 n-gram 从"玩具"变成"可以认真 scale 的东西"。
-
----
-
-## 最反直觉的发现
-
 装了查表模块，你预期知识任务涨（MMLU 确实涨了 3 分）。但**涨得最多的是推理任务**：
 
 - BBH（通用推理）+5.0
@@ -73,13 +26,7 @@ mineru_required_version: 3.4.4
 - HumanEval（代码）+3.0
 - MATH +2.4
 
-知识任务才涨 3 分，推理任务涨 5 分。为什么？
-
-**因为模型以前在用前几层"重建查表"**，这件事吃掉了 depth budget。现在查表外置了，前几层解放了，等于**白送了几层深度给推理用**。
-
 他们用 CKA 验证了这件事：Engram 第 5 层的 representation，对应纯 MoE 第 12 层的 representation。Engram 浅层就达到了 MoE 要到深层才达到的"成熟度"。
-
-用一句话说：**你不是给模型加了记忆，你是给模型减了负担**。
 
 ---
 
@@ -127,12 +74,6 @@ n-gram 服从 Zipf 分布——少数高频 pattern 占绝大多数访问。这�
 1. **第一次在严格公平条件下证明 n-gram 值得作为 first-class primitive**，不是锦上添花的外挂
 2. **揭示了"memory 释放 depth 给 reasoning"这个机制**，用 CKA 和 LogitLens 给出了 clean 证据
 3. **系统 co-design 让 100B 参数表 offload 几乎免费**，打开了"靠扩 embedding 而非扩 expert"的 scaling 路线
-
----
-
-## 一句总结
-
-**LLM 不该用 GPU 去模拟 hash table。给它一个真的 hash table，它会把省下来的算力用在更值得的地方。**
 
 ---
 

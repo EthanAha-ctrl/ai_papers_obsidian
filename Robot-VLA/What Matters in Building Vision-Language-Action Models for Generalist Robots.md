@@ -10,18 +10,10 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 人话版：这篇paper到底在搞啥
+把市面上能买到的8个VLM backbones、4种architecture搭法、3种训练recipe全部买回来
+在同一个testbed(CALVIN + SimplerEnv + real robot)上跑了一遍，然后告诉哪种组合最好，哪些popular的做法其实是overrated的。
 
-## 一句话总结
-
-这篇paper就像是一个**大规模VLA装修指南**——作者把市面上能买到的8个VLM backbones、4种architecture搭法、3种训练recipe全部买回来，在同一个testbed(CALVIN + SimplerEnv + real robot)上跑了一遍，然后告诉你：哪种组合最好，哪些popular的做法其实是overrated的。
-
----
-
-## 为啥要搞这个研究
-
-现在robot policy这个圈子有点乱。大家都说VLA(vision-language-action model)是未来，但每个人搭的architecture都不一样：
-
+每个人搭的architecture都不一样：
 - RT-2用discrete action token，当成text next-token prediction来做
 - OpenVLA跟着RT-2的套路
 - π0用continuous action + flow matching + MoE
@@ -29,66 +21,52 @@ mineru_required_version: 3.4.4
 - Octo也用interleaved
 - RoboFlamingo用policy head
 
-每个人都说自己work，但你不知道到底是backbone牛、还是architecture牛、还是data recipe牛。**没有fair comparison**。
-
-所以作者搞了个叫**RoboVLMs**的framework，统一接口，把所有变量control住，只动一个变量看效果。跑了600+实验。
-
----
-
-## 四个核心问题，人话翻译
+这篇文章搞了 RoboVLMs framework。跑了600+实验。
 
 ### Q1: 为啥要用VLA，不用别的?
 
-**人话**: VLA到底比传统model-free policy强在哪?强多少?
+VLA到底比传统model-free policy强在哪?强多少?
+强很多。在CALVIN上比之前SOTA GR-1高出1.19 Avg.Len.，real-world 20个task × 5个setting全面碾压Octo和OpenVLA。最惊艳的是出现了self-correction行为——robot第一次抓空了会自己调整位置再试，这个behavior training data里根本没有。
 
-**答案**: 强很多。在CALVIN上比之前SOTA GR-1高出1.19 Avg.Len.，real-world 20个task × 5个setting全面碾压Octo和OpenVLA。最惊艳的是出现了**self-correction**行为——robot第一次抓空了会自己调整位置再试，这个behavior training data里根本没有。
-
-**Intuition**: VLM在web-scale图文上学到了"什么是什么"的semantic prior。比如它知道"oven handle长这样"、"drawer是这样开的"。这个prior直接迁移到manipulation，省去了大量exploration。
+VLM在web-scale图文上学到了"什么是什么"的semantic prior。比如它知道"oven handle长这样"、"drawer是这样开的"。这个prior直接迁移到manipulation，省去了大量exploration。
 
 ### Q2: 用哪个VLM backbone?
 
-**人话**: 我到底该用LLaVA、Qwen-VL、Flamingo、KosMos、还是PaliGemma?
+LLaVA、Qwen-VL、Flamingo、KosMos、还是PaliGemma?
 
-**答案**: **KosMos-2和PaliGemma显著最好**。其他都差一截。
+KosMos-2和PaliGemma显著最好
 
-| Backbone | 参数量 | VL pretrain data | CALVIN Avg.Len. |
-|---|---|---|---|
-| Flamingo 9B | 9B | 1B+ pairs | 1.83 |
-| Qwen-VL | 9B | 350K | 0.30 (崩了) |
-| KosMos-2 | 2B | 90M | 3.59 |
-| PaliGemma | 3B | 10B tokens | 3.82 |
+| Backbone    | 参数量 | VL pretrain data | CALVIN Avg.Len. |
+| ----------- | --- | ---------------- | --------------- |
+| Flamingo 9B | 9B  | 1B+ pairs        | 1.83            |
+| Qwen-VL     | 9B  | 350K             | 0.30 (崩了)       |
+| KosMos-2    | 2B  | 90M              | 3.59            |
+| PaliGemma   | 3B  | 10B tokens       | 3.82            |
+|             |     |                  |                 |
 
-**Intuition**: 不是model size大就好(Qwen-VL 9B反而崩了)，是**VL pre-training的data scale和质量**决定一切。PaliGemma在10B token上pretrain，KosMos在90M高质量pair上pretrain，都拿到了strong VL alignment。
-
-**坑**: LLaVA和Qwen-VL这种用大量visual token(256+)的backbone，在VLA setup下训练不稳定。加了perceiver resampler把token降到64-256才work。猜测是visual token太多会稀释action gradient信号。
+不是model size大就好，是VL pre-training的data scale和质量 决定一切。PaliGemma在10B token上pretrain，KosMos在90M高质量pair上pretrain，都拿到了strong VL alignment。
+LLaVA和Qwen-VL这种用大量visual token(256+)的backbone，在VLA setup下训练不稳定。加了perceiver resampler把token降到64-256才work。猜测是visual token太多会稀释action gradient信号。
 
 ### Q3: VLA的architecture怎么搭?
 
-这个是paper最核心的部分，拆成4个小问题。
-
 #### Q3.1: 哪种structure最好?
 
-**人话**: 我该用discrete action还是continuous?要不要history?history怎么塞进去?
-
-**答案**:
+我该用discrete action还是continuous?要不要history?history怎么塞进去?
 - **Continuous action >> Discrete action**: 差距巨大，one-step setup下KosMos continuous 4.04 vs discrete 0.44，快10倍。Discrete action的quantization error会随task horizon累积，long-horizon任务直接崩。
-- **History > No history**: 加history比one-step好，partial observability下历史信息能补全dynamics。
 - **Policy head > Interleaved**: 4.49 vs 4.12。Policy head把VLM和history aggregation解耦，VLM保持原始单帧VL fusion能力，history在外部policy head处理。
 
-**Intuition**: 想象VLM是一个"看图说话"专家。你要让它做的事是"看当前frame + 历史frame，输出action"。
-
+想象VLM是一个"看图说话"专家。你要让它做的事是"看当前frame + 历史frame，输出action"。
 - Interleaved方式相当于逼这个专家看一整本历史相册再给结论，但它训练时从来没这么干过，会confused。
 - Policy head方式相当于让专家每页都看一遍并做笔记，最后由另一个decision maker综合笔记做决策。专家做它擅长的事，decision maker做它擅长的事。
 
 #### Q3.2: 哪种structure泛化好、data效率高?
+Policy head在zero-shot generalization和data efficiency上都最好。
 
-**答案**: Policy head在zero-shot generalization和data efficiency上都最好。
-
-| Architecture | 0.1x data | 1x data | 5x data |
-|---|---|---|---|
-| Flamingo P.H. 3B | 0.13 | 4.09 | 4.21 |
-| KosMos P.H. | 2.52 | 4.49 | 4.51 |
-| KosMos Inter. | 2.49 | 4.12 | 4.46 |
+| Architecture     | 0.1x data | 1x data | 5x data |
+| ---------------- | --------- | ------- | ------- |
+| Flamingo P.H. 3B | 0.13      | 4.09    | 4.21    |
+| KosMos P.H.      | 2.52      | 4.49    | 4.51    |
+| KosMos Inter.    | 2.49      | 4.12    | 4.46    |
 
 Policy head在10%数据下就能达到2.52，interleaved 2.49差不多。但1x data时policy head 4.49明显领先。
 
@@ -96,19 +74,16 @@ Policy head在10%数据下就能达到2.52，interleaved 2.49差不多。但1x d
 
 #### Q3.3: 训练loss用哪个?Inference时action怎么执行?
 
-**答案**:
 - **Flow Matching ≈ MSE+BCE**: 差距很小。Chunk执行下FM 3.68 vs MSE 3.57(ABC setting)。Diffusion的multi-modal modeling能力在short-horizon deterministic任务上没明显优势，反而增加inference latency。
 - **Chunk execution最好**: 比First和Ensemble都好。因为model学的是multi-modal trajectory distribution，只取第一个action相当于mode collapse，丢失planning信息。Chunk执行保留temporal coherence。
 - **First execution最差**: ABC下Avg.Len.只有2.45 vs Chunk 3.68。
 
 **Intuition**: 想象你规划了一条10步trajectory从A到B。
 - Chunk执行: 按计划走完10步再看下一段。Planning信息保留完整。
-- First执行: 每走1步就重新规划。每步都只看第一个action，相当于没有planning，容易drift。
 - Ensemble: 多个chunk预测的同一时刻action做平均。会平滑掉多模态分布的mode，丢失diversity。
 
 #### Q3.4: 要不要加MoE?
-
-**答案**: 看目标。
+看目标。
 - **目标是generalization(open-world)**: 加MoE，ABC setting下MoE 3.84 vs no MoE 3.68。
 - **目标是seen场景performance**: 不加，ABCD setting下no MoE 4.10 vs MoE 3.84。
 
@@ -121,9 +96,7 @@ Policy head在10%数据下就能达到2.52，interleaved 2.49差不多。但1x d
 
 ### Q4: 大规模cross-embodiment data什么时候用?
 
-**人话**: 我要不要用Open X-Embodiment(OXE)这种跨机器人数据?怎么用?
-
-**答案**: 三种recipe:
+三种recipe:
 1. **Co-train**: in-domain + OXE一起训。**帮助有限**。
 2. **Post-train**: 先Co-train，再in-domain finetune。**对high-frequency task有增益**。
 3. **Finetune**: 只用in-domain。**baseline很强**。
@@ -139,9 +112,7 @@ Policy head在10%数据下就能达到2.52，interleaved 2.49差不多。但1x d
 
 ---
 
-## 实操结论：如果今天我要build一个VLA
-
-基于这篇paper，最优配置是：
+最优配置是：
 
 1. **Backbone**: PaliGemma 3B或KosMos-2(看资源)
 2. **Architecture**: Policy-Head + Continuous action
