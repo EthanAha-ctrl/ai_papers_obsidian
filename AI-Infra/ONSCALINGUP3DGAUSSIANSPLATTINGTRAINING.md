@@ -8,16 +8,8 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲讲 Grendel
-
-好，咱们把这篇 paper 拆开揉碎了聊。
-
----
-
-## 一句话说清楚这 paper 干了啥
-
-3D Gaussian Splatting（3DGS）是个特别火的 3D 重建方法，但它有个要命的毛病：**只能在一张 GPU 上跑**。一张 A100 40GB 最多塞下 1100 万个 Gaussians，但实验证明你给它 4000 万个，PSNR 还能涨 1 个 dB。所以问题变成了——**怎么把 3DGS 训练拆到多张 GPU 上**。
+3D Gaussian Splatting（3DGS）是个特别火的 3D 重建方法，但它有个要命的毛病：**只能在一张 GPU 上跑**。
+一张 A100 40GB 最多塞下 1100 万个 Gaussians，但实验证明你给它 4000 万个，PSNR 还能涨 1 个 dB。所以问题变成了——**怎么把 3DGS 训练拆到多张 GPU 上**。
 
 这听起来像是个 trivial 的问题（DDP 嘛，谁不会），但其实特别 tricky，因为 3DGS 的 computation pattern 跟 neural network 完全不是一个物种。
 

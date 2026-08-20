@@ -10,11 +10,8 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 用人话说 FatNet
-
-## 一句话版本
-
-传统 CNN 长成漏斗形（32→16→8→4→flatten→FC）是为了讨好 GPU，因为 GPU 上算大 kernel 很贵、算小图很快。但到了光学 4f 系统上，规则全变了——**光做 Fourier transform 是免费的，分辨率大小无所谓，真正的瓶颈是"光和电之间来回切换的次数"**。所以漏斗形反而浪费，桶形（保持高分辨率 + 大 kernel + 少 channel）才是光学友好的。
+传统 CNN 长成漏斗形（32→16→8→4→flatten→FC）是为了讨好 GPU，因为 GPU 上算大 kernel 很贵、算小图很快.
+但到了光学 4f 系统上，规则全变了——**光做 Fourier transform 是免费的，分辨率大小无所谓，真正的瓶颈是"光和电之间来回切换的次数"**。所以漏斗形反而浪费，桶形（保持高分辨率 + 大 kernel + 少 channel）才是光学友好的。
 
 FatNet 就是按这个新规则把 ResNet-18 改造成桶形，conv 操作数降 8.2 倍，代价是 CIFAR-100 上掉 6% accuracy。
 

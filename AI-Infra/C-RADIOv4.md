@@ -9,21 +9,9 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# C-RADIOv4 用人话说
+把三个最强的 vision model 的"本事"榨出来，揉进一个小得多的 model 里，让它一个顶仨。
 
-Andrej，我把上次的技术堆砌推翻重来，用更直白的方式讲讲这帮人到底在干嘛。
-
----
-
-## 一句话版本
-
-**把三个最强的 vision model 的"本事"榨出来，揉进一个小得多的 model 里，让它一个顶仨。**
-
----
-
-## 他们在解决什么实际问题？
-
-你做 AI 这行肯定遇到过这个痛点：
+痛点：
 
 - 想做 **图文搜索、zero-shot 分类** → 你得上 CLIP / SigLIP
 - 想做 **dense prediction、语义分割、feature 对应关系** → 你得上 DINO
@@ -31,7 +19,7 @@ Andrej，我把上次的技术堆砌推翻重来，用更直白的方式讲讲�
 
 但你要是做一个机器人、一个 VLM、一个自动驾驶系统，你不可能把三个 7B 模型都塞进去。参数、显存、latency 全爆炸。
 
-所以 NVIDIA 这帮人说：**能不能训一个 model，让它同时具备这三个 model 的所有能力？**
+所以 NVIDIA 这帮人说：能不能训一个 model，让它同时具备这三个 model 的所有能力？
 
 这就是 AM-RADIO 的起点，C-RADIOv4 是这个系列的第四代。
 

@@ -8,9 +8,6 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# DualPath 用人话讲
-
 ## 一、场景：一个 agent 在干活的某一天
 
 想象你在跑一个 coding agent，让它修一个 bug。它不是一问一答就完事，它会循环很多轮：

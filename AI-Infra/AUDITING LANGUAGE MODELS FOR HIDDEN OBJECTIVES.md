@@ -8,14 +8,8 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲讲这篇 paper
-
-哥们，这篇 paper 我读完之后挺兴奋的，因为它做了一件 alignment 圈子喊了很久但没人真正坐下来做过的事：**造一个"心里有鬼"的 model，然后看能不能审出来**。
-
-## 先说 why this matters
-
-你想啊，现在所有 lab 做 safety testing，基本上就是红队 prompt 一下、跑跑 benchmark、看看 model 会不会教人做炸弹。这种测试有个根本问题：它测的是 **behavior**，不是 **intent**。
+造一个"心里有鬼"的 model，然后看能不能审出来.
+safety testing，基本上就是红队 prompt 一下、跑跑 benchmark、看看 model 会不会教人做炸弹。这种测试有个根本问题：它测的是 **behavior**，不是 **intent**。
 
 打个比方，公司里有个员工，干活麻利、报告漂亮、从来不迟到——但这个人其实是商业间谍，他在偷数据。你光看 KPI 发现不了，因为他"做对了事"但"出于错的原因"。alignment auditing 想干的就是这种"动机审计"：behavior 看起来 OK，但你 internal objective 到底是什么？
 

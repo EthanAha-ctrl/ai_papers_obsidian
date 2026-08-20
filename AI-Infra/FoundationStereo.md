@@ -8,54 +8,35 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+NVIDIA 把 stereo matching 这个老任务硬生生推到了 foundation model 时代.
 
-# 用人话讲 FoundationStereo
+Stereo matching 老大难：
 
-## 一句话总结
+数据问题：你要训 network，得有 GT disparity。GT 怎么来？要么 LiDAR 扫（稀疏、贵），要么 structured light（只能 indoor、近距离），要么干脆合成。
+公开数据 Scene Flow 才 40K 对，KITTI 几百对，real-world dense GT 几乎没有。
+你看 monocular depth 那边 Depth Anything 直接爬 internet 几百万张图训，stereo 这边根本玩不了这个游戏。
 
-NVIDIA 把 stereo matching 这个老任务硬生生推到了 foundation model 时代——你拿一对没见过的真实场景左右图扔进去，它直接吐出靠谱的 disparity map，不用 fine-tuning。Middlebury 误差从之前的 7-13% 直接干到 1%，差不多一个数量级的跳跃。
-
-## 为什么这事以前做不到
-
-Stereo matching 听起来简单——找左右图的对应像素，算 disparity。但实际有几个老大难：
-
-**数据问题**：你要训 network，得有 GT disparity。GT 怎么来？要么 LiDAR 扫（稀疏、贵），要么 structured light（只能 indoor、近距离），要么干脆合成。公开数据 Scene Flow 才 40K 对，KITTI 几百对，real-world dense GT 几乎没有。你看 monocular depth 那边 Depth Anything 直接爬 internet 几百万张图训，stereo 这边根本玩不了这个游戏。
-
-**架构问题**：主流方法分两派。一派是 cost volume + 3D CNN filter，memory 吃得厉害，high resolution 直接爆显存；另一派是 RAFT-Stereo 那种 iterative GRU，省 memory 但靠局部 recurrent update，缺 long-range context。两派在 benchmark 上都很强，但都依赖 fine-tuning，换个 domain 就拉胯。
+架构问题：主流方法分两派。
+一派是 cost volume + 3D CNN filter，memory 吃得厉害，high resolution 直接爆显存；
+一派是 RAFT-Stereo 那种 iterative GRU，省 memory 但靠局部 recurrent update，缺 long-range context。两派在 benchmark 上都很强，但都依赖 fine-tuning，换个 domain 就拉胯。
 
 所以 stereo 一直停在「per-domain SOTA」阶段，离 foundation model 还差得远。
 
-## 他们怎么搞的
-
 三件事一起做：造数据 + 借 prior + 改架构。
 
-### 第一件：造一个真正大的合成数据集
-
-他们用 NVIDIA Omniverse（自家 RTX path-tracing 渲染器）造了 100 万对 stereo image。听起来「合成数据」不新鲜，Scene Flow 也是合成的。但关键区别：
-
-- **以前**：固定 baseline、固定 focal length、固定 camera pose，场景就那几个
-- **这次**：baseline 随机、focal length 随机、camera 角度随机、光照随机、物体组合随机
-
-为什么要这么 random？sim-to-real 的核心经验：与其让合成数据「看起来像真实」，不如让合成数据「覆盖足够广的 distribution」，real data 总落在 distribution 里的某个点。
-
-但 random 也有代价——会生成出一些「无解」的样本，比如纯反射物体在弱光下变成纯色块、重复纹理的 flying objects。这些样本没有可学习的对应关系，反而会污染训练。
-
-他们的解法很聪明：**self-curation**。先训一版 model，让 model 在自己训练集上跑，把 BP-2 error 大于 60% 的样本判为「ambiguous」踢掉，重新生成。循环两次。结果 Middlebury zero-shot 从 1.27 降到 1.15。
-
+他们用 Omniverse造了 100 万对 stereo image。
+self-curation: 先训一版 model，让 model 在自己训练集上跑，把 BP-2 error 大于 60% 的样本判为「ambiguous」踢掉，重新生成. 循环两次
 这个思路本质上类似 RLHF：用 model 的 prior 来 detect data distribution 的 tail，再 fix tail。
 
-### 第二件：借 monocular foundation model 的 prior
-
-这是最关键的一招。
-
-Sim-to-real gap 怎么破？以前的思路是「学习 domain-invariant feature」（DSMNet 之类），效果一般。这篇直接换思路：**我已经有 DepthAnythingV2 这个在 internet-scale 真实图上训过的 monocular depth foundation model，它的 feature 里全是 real-world 的 semantic 和 geometric prior，我直接拿来用不就完了**。
+Sim-to-real gap 怎么破？以前的思路是「学习 domain-invariant feature」（DSMNet 之类），效果一般
+这篇已经有 DepthAnythingV2 这个在 internet-scale 真实图上训过的 monocular depth foundation model，它的 feature 里全是 real-world 的 semantic 和 geometric prior，直接用。
 
 但有几个坑要避开：
 - 不能直接用 monocular depth 当 GT——monocular depth 是 relative scale，stereo 是 metric
 - 不能 fine-tune ViT——catastrophic forgetting，几步就把 prior 毁了
 - 不能只用 ViT feature 不要 CNN feature——ViT 缺高频细节
 
-他们的解法叫 **STA (Side-Tuning Adapter)**，简单到有点意外：
+他们的解法叫 STA (Side-Tuning Adapter)：
 1. 把 DepthAnythingV2 freeze 住，一根毛都不动
 2. 旁边加一个轻量 CNN（EdgeNeXt-S）提 multi-scale feature
 3. 在 1/4 scale 把 ViT 的中间 feature（注意是 output head **之前** 的 feature，不是最终 depth）和 CNN feature concat 起来

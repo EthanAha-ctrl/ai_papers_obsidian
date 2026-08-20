@@ -8,16 +8,10 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+以前搞robot learning，code里通常把robot当成一个“environment”。你调`env.step(action)`，它返回`obs`。
+在这层之上，scheduler根本不知道有个物理机器人的存在，它只看到GPU。
 
-Andrej，咱们用最直白的话来拆解这篇paper。你一直强调systems thinking在AI里的重要性，这篇paper正好就是把distributed systems的工程智慧硬塞进embodied AI里的一次尝试。
-
-咱们从最底层的intuition开始build。
-
-### 1. 最核心的Systems Insight：把Robot等同于GPU
-
-以前搞robot learning，code里通常把robot当成一个“environment”。你调`env.step(action)`，它返回`obs`。在这层之上，scheduler根本不知道有个物理机器人的存在，它只看到GPU。
-
-USER的核心脑洞是：**在scheduler眼里，Franka机械臂和一张A100完全是平等的first-class hardware resource**。
+USER的核心脑洞是：在scheduler眼里，Franka机械臂和一张A100完全是平等的first-class hardware resource
 
 为啥这很重要？因为当你要scale up的时候，你面对的是异构集群：有的node有A100，有的node只有CPU连着机械臂，有的node插着camera。如果robot不是first-class resource，你就得手写一堆glue code去匹配“哪个GPU process连哪个robot”。USER搞了一个Hardware Abstraction Layer (HAL)，每个hardware（无论GPU还是robot）都有个typed descriptor。Scheduler直接用rank-based placement分配：“Process 0，你拿GPU Rank 0和Robot Rank 0”。这在机制上跟Ray或Kubernetes分配GPU的底层逻辑是完全一致的。
 (参考Ray: https://www.ray.io/)

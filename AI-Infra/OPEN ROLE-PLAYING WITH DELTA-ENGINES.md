@@ -9,13 +9,11 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-咱们抛开那些学术套话，用最直白的话来聊聊这篇 paper 到底在搞什么飞机。
+你玩传统的 RPG 游戏，比如《Assassin’s Creed》或者《Pokemon》，你以为你在扮演角色，其实你只是在走 designer 画好的迷宫。
+你想让角色学个新招？只能在系统给你列好的技能树里挑。哪怕你智商 200，想出一个系统根本没预设的招式，游戏就给你报错或者没反应。
 
-### 1. 痛点：游戏设计师的牢笼
-
-你玩传统的 RPG 游戏，比如《Assassin’s Creed》或者《Pokemon》，你以为你在扮演角色，其实你只是在走 designer 画好的迷宫。你想让角色学个新招？只能在系统给你列好的技能树里挑。哪怕你智商 200，想出一个系统根本没预设的招式，游戏就给你报错或者没反应。
-
-这篇 paper 的作者觉得这太没劲了。他的 vision 是：玩家出生时大家都差不多，就像一张白纸，但你通过自然语言告诉游戏“我想干嘛”，游戏就能让你的角色真正长成你想要的样子。比如你说 “Let me learn a talent to burn the enemy”，系统就该听懂，并给你凭空造出一个喷火技能。这就是所谓的 Open Role-Playing Games (ORPGs)。
+他的 vision 是：玩家出生时大家都差不多，就像一张白纸，但你通过自然语言告诉游戏“我想干嘛”，游戏就能让你的角色真正长成你想要的样子。
+比如你说 “Let me learn a talent to burn the enemy”，系统就该听懂，并给你凭空造出一个喷火技能。这就是所谓的 Open Role-Playing Games (ORPGs)。
 
 ### 2. 核心魔法：Delta-Engine
 

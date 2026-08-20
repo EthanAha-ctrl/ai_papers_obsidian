@@ -8,14 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# EMCAD 人话版：把 decoder 从"奢侈品"做成"几乎免费"
-
-Andrej,如果用一句话讲 EMCAD 的故事：**这帮人发现医学分割的 decoder 根本没必要用贵的东西，把 MobileNetV2、ShuffleNet、CBAM、Attention U-Net 的轻量化 trick 拼一拼，decoder 从 9.27M 参数砍到 1.91M，性能反而涨 0.85%**。
-
-下面用大白话拆开讲。
-
----
+医学分割的 decoder 根本没必要用贵的东西，把 MobileNetV2、ShuffleNet、CBAM、Attention U-Net 的轻量化 trick 拼一拼，decoder 从 9.27M 参数砍到 1.91M，性能反而涨 0.85%**。
 
 ## 1. 问题在哪：decoder 是个被忽视的"奢侈品"
 

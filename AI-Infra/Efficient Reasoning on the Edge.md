@@ -8,36 +8,13 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+把推理模型塞进手机里
 
-# 用人话讲讲这篇paper
+不要把reasoning能力焊死在模型里，做成一个可以开关的"插件"
 
-## 这篇paper到底在干嘛
+遇到难题了，啪一下装上reasoning插件（LoRA adapter），模型瞬间变成reasoning模式开始思考。
 
-一句话：**把会推理的大模型塞进手机里**。
-
-现在的reasoning model（DeepSeek-R1、OpenAI o1这些）解题很厉害，但会生成巨长的思考过程。问它一个数学题，它可能think个2万个token才给你答案。cloud上无所谓，但手机上跑不动 - 内存吃不下，电池扛不住，速度慢到用户骂娘。
-
-Qualcomm作为做手机芯片的公司，必须解决这个问题。这篇paper就是他们的完整方案。
-
-## 为什么这事儿难
-
-三个问题叠在一起：
-
-**第一，手机内存太小**。云端可以跑70B、200B的模型，手机顶天跑7B，还得狠狠量化。DRAM就那么点大，还要跟操作系统分。
-
-**第二，token生成天生慢**。LLM生成token是autoregressive的 - 一次吐一个字，每次都要把整个模型的weights从DRAM搬到NPU算一遍。这是memory-bound的，NPU算力再强也没用，卡在数据搬运上。CoT动辄几千上万个token，用户等不起。
-
-**第三，reasoning model太话痨**。你让它做一道简单算术题，它也要"让我一步步分析...让我验证一下...让我再确认..."，废话连篇。其实简单题根本不需要思考，直接答就行。
-
-这三个问题如果不一起解决，reasoning model在手机上就没法用。
-
-## 他们的approach
-
-核心思路：**不要把reasoning能力焊死在模型里，做成一个可以开关的"插件"**。
-
-想象你手机里有个7B的base model，平时正常聊天。遇到难题了，啪一下装上reasoning插件（LoRA adapter），模型瞬间变成reasoning模式开始思考。简单题就用base model直接答，省时省电。
-
-具体分几步：
+简单题就用base model直接答，省时省电。
 
 ### 1. 用LoRA教模型学推理
 

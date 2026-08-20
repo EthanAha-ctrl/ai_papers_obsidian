@@ -8,16 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲Event Tensor
-
-好，我换个说法，像咱俩在咖啡馆白板上画图聊一样。
-
----
-
-## 1. 这个问题到底为什么让人头疼
-
-你想啊，LLM推理的时候——尤其是decode阶段，batch size = 1那种实时聊天的场景——GPU上发生了什么？
+decode阶段，batch size = 1那种实时聊天的场景——GPU上发生了什么？
 
 一整层transformer要跑：RoPE、Norm、KV-Cache append、Attention、 projection、MLP/MoE……拆开来看可能有**几百个小kernel**。每个kernel从CPU那边launch过去，光过driver、过command buffer、到GPU front-end dispatch，就要**5到10微秒**。但这个kernel本身在GPU上算完可能只要**2微秒**。
 

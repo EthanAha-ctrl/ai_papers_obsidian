@@ -9,7 +9,7 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-Andrej，要我用人话讲，其实就是一句话：**OpenTinker 把训练 LLM Agent 变成了一个云端服务，让写算法的人再也不用操心 GPU 资源怎么分。**
+把训练 LLM Agent 变成了一个云端服务，让写算法的人再也不用操心 GPU 资源怎么分。
 
 以前我们搞 Agentic RL，得自己写一堆乱七八糟的代码，一边要管 Agent 怎么跟环境交互，一边还要管 GPU 什么时候做 forward，什么时候做 backward。OpenTinker 把这些破事全拆开了。你只管定义“游戏规则”和“Agent 的脑子”，剩下的资源调度、分布式训练、前后向传播，OpenTinker 这个大管家全包了。
 

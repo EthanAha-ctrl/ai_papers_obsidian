@@ -8,34 +8,16 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲 FAIR
-
-## 一句话直觉
-
-FAIR 就是**给 data 一套身份证系统 + 黄页 + 快递协议 + 说明书**, 让机器能像人查 Wikipedia 一样, 自动找到、拿到、读懂、复用 data。
-
-## 1. 为什么会冒出这么一套东西
-
-你做过 large model training 就知道, 真正痛的往往不是 algorithm, 是 data。Common Crawl 拉下来一个 snapshot 90TB, 你不知道里面有什么、谁标的、license 是啥、能不能商用、preprocessing 怎么做的。你花了三天扒 source code 想复现某个 dataset 的 cleaning pipeline, 才发现 README 写着 "see internal repo, not public"。
-
-这就是 FAIR 之前的世界。每个 lab 都有自己的 data dump, 像 1995 年的 internet, 全是散落的 FTP server, 没有搜索引擎, 没有统一 URL, 没有标准 metadata。
-
-2016 年一群荷兰、德国、英国 informatician 看不下去了, 写了这 15 条 principles。本质就是: **科学界也需要一个 Google + DNS + HTTP + robots.txt 的 stack**。FAIR 是把 web 这套设计哲学搬到 data world。
-
-Reference: [Wilkinson et al. 2016 原文](https://www.nature.com/articles/sdata201618)
+给 data 一套身份证系统 + 黄页 + 快递协议 + 说明书, 让机器能像人查 Wikipedia 一样, 自动找到、拿到、读懂、复用 data。
+你花了三天扒 source code 想复现某个 dataset 的 cleaning pipeline, 才发现 README 写着 "see internal repo, not public"。
+2016 年一群荷兰、德国、英国 informatician 看不下去了, 写了这 15 条 principles。
+科学界也需要一个 Google + DNS + HTTP + robots.txt 的 stack。FAIR 是把 web 这套设计哲学搬到 data world。
 
 ## 2. F (Findable) - data 的身份证
 
-核心一句话: **没 ID, 一切免谈**。
-
-想象你训练一个 model, paper 里写 "we used the ImageNet-1k dataset"。这句话在 2010 年 OK, 在 2026 年是 unscientific 的。因为 ImageNet 至少有 5 个版本, 你到底用哪个? 谁知道。FAIR F1 就是逼你给每个 dataset 一个 **globally unique persistent ID** (DOI/Handle), 别人引用时写 `doi:10.5072/XXXX`, 而不是 "ImageNet from the website we downloaded on March 2024"。
-
-**为什么 persistent 这么重要**: URL 会 rot。Stanford Vision Lab 的 server 一关, imagenet.stanford.edu 死掉, 整个 paper 链条就断。DOI 背后有个 Handle System, 解析到当前 mirror, 服务器迁移只改 pointer 不改 ID。这和 domain name 系统 logic 一致。
-
-**F4 (registered in searchable resource)**: 你的 dataset 不能只在自己 lab 的 git repo 里躺着, 要 push 到 Zenodo / DataCite / Google Dataset Search。这就像 webpage 要被 Googlebot crawl 才能搜到。否则就 invisible。
-
-Reference: [Google Dataset Search](https://datasetsearch.research.google.com/), [Zenodo](https://zenodo.org/)
+没 ID, 一切免谈
+FAIR F1 就是逼你给每个 dataset 一个 globally unique persistent ID (DOI/Handle), 别人引用时写 `doi:10.5072/XXXX`, 而不是 "ImageNet from the website we downloaded on March 2024"。
+F4 (registered in searchable resource): 你的 dataset 不能只在自己 lab 的 git repo 里躺着, 要 push 到 Zenodo / DataCite / Google Dataset Search。这就像 webpage 要被 Googlebot crawl 才能搜到。否则就 invisible。
 
 ## 3. A (Accessible) - data 的快递协议
 
@@ -140,8 +122,6 @@ Reference: [NIH Data Management & Sharing Policy](https://sharing.nih.gov/data-m
 FAIR 的本质, 是把 "dataset" 从一个**离散的、靠人脉传播的、不可验证的民间物**升级成一个**有 PID、有 protocol、有 metadata、有 license 的 first-class digital citizen**。它对应于 web 把零散的 FTP server 升级成可被 Google 检索的 hyperlink 网络的那次跃迁。
 
 差别在于 web 是 1995 年靠商业驱动自下而上演进出来的, FAIR 是 2016 年靠学术共同体自上而下倡议出来的。自上而下的标准推广速度永远慢, 所以 FAIR 在 2026 年仍处于 "大家都认可, 但没几个真做到" 的阶段。下一波 push 大概率是 regulatory (像 GDPR 之于 privacy), 时机可能是 AI training data 的某个大 lawsuit 之后。
-
-Reference: [GO FAIR Initiative](https://www.go-fair.org/), [FAIRsharing standards registry](https://fairsharing.org/)
 
 ---
 
