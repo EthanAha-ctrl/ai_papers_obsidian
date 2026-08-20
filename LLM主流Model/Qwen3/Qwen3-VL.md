@@ -1,1402 +1,572 @@
-这篇文章是 **Qwen Team** 于 2025 年 12 月 1 日发布的 **Qwen3-VL Technical Report**。Qwen3-VL 是迄今为止 Qwen 系列中最强大的 Vision-Language Model (VLM)。它不仅在多模态任务上达到了 State-of-the-Art (SOTA) 的性能，还在长文本理解、视频处理以及纯文本推理能力上取得了显著突破。
+---
+source_pdf: qwen3-vl.pdf
+paper_sha256: ee075d08e67de1148d6437c6c1d481f7894183b8793905a2deb5f62664f49380
+processed_at: '2026-08-11T20:31:19-07:00'
+target_folder: LLM主流Model/Qwen3
+model: z-ai/glm-5.2
+reasoning_effort: max
+followup_prompt: 用人话说说
+mineru_required_version: 3.4.4
+---
 
-以下是对该技术报告的深度解析，涵盖架构设计、训练策略、数据工程以及评估结果。
+# Qwen3-VL 用人话讲讲
+
+Andrej，这篇 paper 我读了几遍，整体感觉是 **engineering-heavy 但每一步都有 clear motivation**。不是那种炫技的 paper，每个 trick 都在解决一个具体的痛点。我从工程师视角讲讲。
 
 ---
 
-### 1. 模型概览与核心能力
+## 一、这篇 paper 到底在解决什么 pain
 
-Qwen3-VL 提供了 **Dense (稠密)** 和 **Mixture-of-Experts (MoE, 混合专家)** 两种架构：
-*   **Dense 模型**: Qwen3-VL-2B, 4B, 8B, 32B
-*   **MoE 模型**: Qwen3-VL-30B-A3B (30B 参数，3B 激活), Qwen3-VL-235B-A22B (235B 参数，22B 激活)
+你做 VLM 做久了肯定遇到几个心累的事：
 
-**三大核心支柱**:
-1.  **更强大的纯文本理解**: 即使作为 VLM，在语言能力上也超越了 comparable 的 Text-only Backbone。
-2.  **原生 256K 长上下文**: 原生支持文本和图像/视频交织的 256K token 上下文，能够忠实保留、检索和引用跨长文档和视频的信息。
-3.  **高级多模态推理**: 在单图、多图和视频任务上表现出色，特别是在 MathVista 和 MathVision 等 Visual-Math Benchmark 上处于领先地位。
+1. **长视频一拉就崩**：模型看 1 分钟视频还行，看 30 分钟就忘了前面。为什么？因为之前的 positional encoding 在长视频上外推不过去。
+2. **OCR / DocVQA 永远不够细**：ViT 最后一层给 LLM 的 visual feature 已经被"抽象化"了，细节丢了，所以小字、表格、图表永远是弱项。
+3. **VLM 一训就忘 text**：vision 数据一多，LLM 原本的 reasoning 能力就掉。业界普遍做法是拼命补 text 数据，效果有限。
+4. **Tool use 训不好**：让模型学会"什么时候 zoom in" 很难，模型要么不调用 tool，要么疯狂调用 tool 来 hack reward。
 
----
-
-### 2. 核心技术架构详解
-
-Qwen3-VL 依然采用三模块架构：**Vision Encoder + MLP-based Vision-Language Merger + Large Language Model (LLM)**，但在关键组件上进行了重大升级。
-
-#### 2.1 增强的 Interleaved MRoPE (Multimodal Rotary Positional Embeddings)
-在 Qwen2.5-VL 中，MRoPE 将 embedding 维度划分为时间、水平、垂直三组。但这会导致频谱不平衡，损害长视频理解。
-*   **改进方案**: 采用 **Interleaved MRoPE**。
-*   **技术细节**:
-    *   原方案：Embedding 维度 $D$ 被切分为 $[t, h, w]$ 连续的块。例如 $D=4096$，可能前 1366 维给 $t$，中间 1366 维给 $h$，后 1364 维给 $w$。这导致每个维度的频率分布不均。
-    *   新方案：将 $t, h, w$ 的分量均匀交织在整个 embedding 维度中。这意味着在 embedding 的任意切片中，同时包含时间、空间的高频和低频信息。
-    *   **效果**: 这种平衡的频率谱缓解了原有的光谱偏差，显著提升了对长视频中长期位置信息的建模能力。
-
-#### 2.2 DeepStack 机制 (跨层视觉特征融合)
-为了加强 Vision-Language 的对齐，Qwen3-VL 引入了 DeepStack 机制。不同于原始 DeepStack 堆叠多尺度输入的 tokens，这里将其扩展用于提取 Vision Transformer 的中间层特征。
-*   **架构解析**:
-    *   从 Vision Encoder (SigLIP-2) 的三个不同层级（例如浅层、中层、深层）提取视觉特征。
-    *   使用专门的 Vision-Language Merger (MLP) 将这些多层级特征投影到与 LLM hidden state 相同的维度。
-    *   通过轻量级的残差连接，将这些投影后的 Visual Tokens **直接加** 到对应的 LLM 前三层（或指定层）的 hidden states 上。
-*   **优势**: 这种设计使得 LLM 的每一层都能接收到从低级纹理到高级语义的丰富视觉信息，增强了多层级融合，且不引入额外的上下文长度开销。
-
-#### 2.3 Text-based Video Timestamp (基于文本的视频时间戳)
-在处理长视频时，原有的 T-RoPE (基于绝对时间的位置编码) 会导致时间 ID 过大且稀疏，且需要极高成本的数据采样。
-*   **新方案**: 显式的文本时间戳。
-*   **实现细节**:
-    *   为每个视频 temporal patch 前缀一个格式化的文本字符串，例如 `<3.0 seconds>` 或 `<00:00:03>` (HMS 格式)。
-    *   在训练时，模型会学习这两种格式（秒数和 HMS 格式）之间的转换和理解。
-*   **效果**: 虽然略微增加了上下文长度，但赋予模型更精确、鲁棒的时间感知能力，特别有利于 Video Grounding 和 Dense Captioning 任务。
-
-#### 2.4 平方根重加权
-为了平衡目标和 VLM 损失，防止视觉数据（通常 tokens 较多）主导或忽略文本数据。
-*   **公式**:
-    $$L_{total} = \frac{1}{\sqrt{N_{text}}} \sum_{i=1}^{N_{text}} L_{text}^{(i)} + \frac{1}{\sqrt{N_{vision}}} \sum_{j=1}^{N_{vision}} L_{vision}^{(j)}$$
-    其中 $N_{text}$ 和 $N_{vision}$ 分别是文本和视觉 tokens 的数量。通过除以 $\sqrt{N}$，可以平滑不同模态样本在视觉批次中的贡献差异。
-
-#### 2.5 Vision Encoder
-使用 **SigLIP-2** 架构 (如 SigLIP2-SO-400M 或 SigLIP2-Large-300M)，并继续使用动态分辨率训练，通过 2D-RoPE 和绝对位置嵌入插值来适应输入尺寸。
+Qwen3-VL 这篇 paper 基本就是围绕这 4 个 pain 一一对应的解法。
 
 ---
 
-### 3. 训练策略与数据工程
+## 二、三个架构 trick 用人话讲
 
-#### 3.1 端到端预训练流程
-预训练分为四个阶段，循序渐进地构建能力：
+### 1. Interleaved MRoPE：给 temporal 装上显微镜和望远镜
 
-| Stage | Objective | Token Budget | Sequence Length | Key Data |
-| :--- | :--- | :--- | :--- | :--- |
-| **S0** | Vision-Language Alignment | 67B | 8,192 | 仅更新 Merger，使用 Image-Caption, OCR |
-| **S1** | Multimodal Pre-Training | ~1T | 8,192 | 全参数训练，混合 Text 和 VL (Interleaved, VQA) |
-| **S2** | Long-Context Pre-Training | ~1T | 32,768 | 增加 Text-only 比例，引入 Agent 指令，长视频数据 |
-| **S3** | Ultra-Long-Context Adaptation | 100B | 262,144 | 极致长上下文，专注长视频、长文档理解 |
+**老方法的问题**：Qwen2-VL 把 embedding 维度切成三份，一份给 temporal (t)，一份给 horizontal (h)，一份给 vertical (w)。具体说 $d/6$ 维给 t 的低频，$d/6$ 维给 t 的高频，h 和 w 同理。
 
-#### 3.2 高质量数据构建
-Qwen3-VL 的强大性能很大程度上归功于极其精细的数据工程：
+但实际操作时 t 主要占低频 band。这造成一个尴尬的事：**temporal 维度只能感知"大局"，感知不到"细节"**。
 
-*   **Image Caption & Interleaved Data**: 使用 Qwen2.5-VL-32B 对原始文本进行 re-captioning，生成更细粒度的描述。利用聚类识别视觉嵌入稀疏区域，针对性增强。
-*   **Knowledge & Entities**: 针对动物、地标、日常物品等实体构建数据集，采用基于重要性的采样策略（高频实体多采，低频实体少采但覆盖全）。
-*   **OCR & Document Parsing**: 支持 39 种语言（Qwen2.5-VL 仅支持 10+种）。构建了 300万 PDFs 的解析数据，使用统一的 QwenVL-HTML 和 QwenVL-Markdown 格式。
-*   **Grounding & Counting**: 结合公开数据集（COCO, RefCOCO/+/g）和自动合成管线（Grounding DINO + VLM 重标注）。归一化坐标系到 [0, 1000] 以提高鲁棒性。
-*   **Spatial & 3D Understanding**: 训练模型理解空间关系（"left of", "sittable"）和 3D bounding box 预测（基于 Omni3D 数据，统一到虚拟相机坐标系）。
-*   **Code**: 引入多模态编程数据，包括 UI截图转 HTML/CSS，图转 SVG，视觉编程挑战等。
-*   **STEM**: 分而治之策略。先构建精细视觉感知，再构建语言学推理，最后融合。生成 600万+ K-12 及大学级习题。
-*   **Agent (GUI)**: 包含跨平台桌面、移动端、Web 的数据。构建多步任务轨迹，配合 Chain-of-Thought (CoT) 强化规划能力。
+类比一下：你戴了一副只能看远处的望远镜，能看到"这是早上 9 点"，但分不清"这是 9:01 还是 9:02"。对于短视频无所谓，对于 1 小时视频，10 秒粒度的 action 你就完全抓不住了。
+
+**新方法**：把 t、h、w **interleaved 分布**到整个 frequency spectrum 上。第 0 维给 t 的低频，第 1 维给 h 的低频，第 2 维给 w 的低频，第 3 维给 t 的中频，第 4 维给 h 的中频……依此类推。
+
+形式化一下，第 $i$ 个 frequency 对应的轴是 $\text{axis}(i) = i \mod 3$（0=t, 1=h, 2=w）。
+
+**Intuition**：每个轴都均匀地拿到从低频到高频的全谱。t 既能感知"这是早上"（低频），也能感知"这是 9:01:30"（高频）。h、w 也一样，既能感知"图片整体在左上"（低频空间），也能感知"这个像素在 (234, 567)"（高频空间）。
+
+这种思想其实和 RoFormer 原始论文里对纯文本的 RoPE 设计异曲同工——让每一层 attention 都能 attend 到 multiple scales。
+
+**效果**：长视频理解能力大幅提升。Paper 里 Needle-in-a-Haystack 测试，30 分钟视频（256K token）100% accuracy，2 小时视频用 YaRN 外推到 1M token 还是 99.5%。这个数字我自己看到的时候是真的"啊？"。
+
+### 2. DeepStack：让 LLM 早期层直接看到 raw 视觉
+
+**老方法的问题**：传统 VLM 是 ViT 跑完所有层，把最后一层输出扔给 LLM。相当于 ViT 是个翻译官，先把图"消化"成抽象语义，再告诉 LLM "这张图里有个红色杯子在桌上"。
+
+问题在哪？**OCR、表格、图表这种 fine-grained 任务需要细节，但细节在 ViT 深层被抽象掉了**。ViT 第 1 层看到的是 edge、texture，第 24 层看到的是 "cup"，但 OCR 需要的是字符级别的 stroke。
+
+**新方法**：从 ViT 的 3 个中间层抽 features，分别通过 dedicated merger 投影，**直接加到 LLM 前 3 层的 hidden state 上**。
+
+```
+ViT Layer A → Merger_1 → add → LLM Layer 1 hidden
+ViT Layer B → Merger_2 → add → LLM Layer 2 hidden
+ViT Layer C → Merger_3 → add → LLM Layer 3 hidden
+ViT Layer final → standard merger → LLM input (像传统 VLM)
+```
+
+**Intuition**：相当于 ViT 在 LLM 旁边递纸条："嘿，这是 raw edge 信息"，"嘿，这是 mid-level texture"。LLM 早期层就开始融合视觉，而不是等 ViT 把视觉"翻译"完。这有点像你在读论文时，旁边坐个专家随时给你补充背景知识，而不是等他看完论文再告诉你结论。
+
+**为什么不增加 context length**：因为 DeepStack 是 hidden state 层面的 residual，不引入新 token。Visual token 数量不变，inference cost 不变。这点很关键——是免费午餐。
+
+**效果**：Table 12 ablation，15B-A2B LLM 上 200B token 训练，OCR 从 81.0 → 83.6，InfoVQA 从 71.9 → 74.2，DocVQA 从 89.5 → 91.1。**全是 fine-grained 任务提升最大**，符合直觉。
+
+### 3. Text-based Timestamp：把时间从"位置编码"降维成"文本"
+
+**老方法的问题**：Qwen2.5-VL 用 T-RoPE，第 5 秒的帧，temporal position id 就是 5。听起来 natural，但有两个坑：
+
+- **坑 1**：长视频 position id 跑到几千几万，RoPE 没见过这么大的 id，外推性能崩。
+- **坑 2**：要让模型 robust，得在 1fps、2fps、4fps 各种帧率上均匀采样训练，数据构建成本爆炸。
+
+**新方法**：在每个 frame group 前面**显式插入一个 text token**，比如 `<3.0 seconds>`。训练时同时用 seconds 和 HMS 两种格式（`<00:00:03.000>`），让模型学会读不同 timecode。
+
+**Intuition**：把时间从 positional encoding 退化为 text understanding。LLM 处理文本是它的强项，所以这样更 robust、更灵活。代价是稍微多几个 token，但换来的是：
+- 长视频不会 position id 爆表
+- 不需要训各种 fps
+- 时间表达灵活，可以做 "3.5s" 也可以做 "00:00:03.500"
+- 模型可以输出 timestamp 做 video grounding 和 dense captioning
+
+这其实是个很 elegant 的"hack"。我一开始觉得"这不算 architecture innovation 吧"，但仔细想，**把问题从硬编码（position）转化为软编码（text）**，让模型用自己擅长的能力去处理，这恰恰是 ML 里最高效的设计思路。
 
 ---
 
-### 4. 后训练
+## 三、训练 trick 用人话讲
 
-#### 4.1 监督微调 (SFT)
-*   **数据**: 120万高质量样本，1/3 文本，2/3 视觉/视频。
-*   **分步策略**: 先在 32K context 长度训练一 epoch，再在 256K 长度训练一 epoch（混合长上下文和短上下文数据）。
-*   **过滤流程**:
-    *   *Query Filtering*: 过滤不可验证、模糊或低质的查询。
-    *   *Response Filtering*: 结合规则（去重、去有害内容）和基于 Qwen2.5-VL 的 Reward Model（评估正确性、完整性、是否有幻觉）双重清洗。
+### 1. Square-root Reweighting：在 token 和 sample loss 之间找平衡
 
-#### 4.2 Strong-to-Weak Distillation
-利用强大的 Teacher Model (如 Qwen3-VL-235B) 来指导轻量级 Student Model。
-*   两阶段：Off-policy (Teacher输出生成) -> On-policy (Student生成，最小化 KL 散度)。
+**问题背景**：训练 VLM 时一个 batch 里样本长度差异巨大。一张图的 caption 可能 50 token，一个长文档 QA 可能 100K token。
 
-#### 4.3 Reinforcement Learning (RL)
-采用 **SAPO (Soft Adaptive Policy Optimization)** 算法。
-*   **Reasoning RL**: 针对数学、代码、逻辑推理等可验证任务。使用规则或代码执行器作为奖励信号。
-*   **General RL**: 提升泛化和鲁棒性。奖励机制包含两方面：
-    *   *Instruction Following*: 评估格式、长度、JSON 结构等约束。
-    *   *Preference Alignment*: 基于 Qwen3 作为 Judge，评估有帮助性、事实准确性。
+**Per-sample loss**（每个样本算平均 loss 再 batch 平均）：
+$$\mathcal{L} = \frac{1}{N} \sum_i \frac{1}{T_i} \sum_t \ell_{i,t}$$
+短样本被过度放大——50 token 的小 QA，每个 token 都被加权 $\frac{1}{N \cdot 50}$；100K token 的长文档，每个 token 被加权 $\frac{1}{N \cdot 100K}$。短样本 token 权重是长样本的 2000 倍。
 
-#### 4.4 Thinking with Images (视觉Agent范式)
-通过两阶段训练赋予模型“看图思考”的能力：
-1.  **冷启动 SFT**: 约 10k 简单 grounding 示例，训练模型模拟 `think -> act -> analyze -> answer` 的流程。
-2.  **Distillation & RL**: 使用蒸馏和工具集成 RL (Tool-integrated RL) 扩展到 120k 多轮交互任务。奖励信号包括答案准确性、多步推理连贯性以及工具调用合理性。
+**Per-token loss**（所有 token 平等）：
+$$\mathcal{L} = \frac{1}{\sum T_i} \sum_{i,t} \ell_{i,t}$$
+长样本主导——100K 文档有 100K 个 token，每个都贡献 loss，长文档"票数"太多。
 
----
+**Square-root reweighting**：
+$$\mathcal{L} = \frac{1}{\sum_i \sqrt{T_i}} \sum_i \frac{1}{\sqrt{T_i}} \sum_t \ell_{i,t}$$
 
-### 5. 性能评估与实验数据解析
+**Intuition**：长样本权重 = $\sqrt{T_i}$，介于 1（per-sample）和 $T_i$（per-token）之间。长样本说话权大，但不是线性大，给短样本留存在感。
 
-#### 5.1 综合多模态推理 (Multimodal Reasoning)
-*   **MMMU (Pro)**: Qwen3-VL-235B-A22B-Thinking 在 MMMU-Pro 上达到了 **71.2**，超越了 GPT-5 minimal thinking (64.8) 和 Claude Opus 4.1 (74.4 Thinking)。
-*   **MathVista / MathVision**: 在 MathVista-mini 上达到 **85.8** (Thinking mode)，处于领先地位。
-*   **Visual Puzzles / ZeroBench**: 在 ZeroBench 和 VLMsAreBlind 上表现卓越，显示出极强的细节感知能力。
+**效果**：Table 5/6 显示，Qwen3-VL 在 text benchmark（AIME-25、MMLU-Pro、LiveCodeBench）上和 Qwen3 text-only 持平甚至略胜。**VLM 训练不退化 text 能力**，这是 square-root + 大量 text 数据 + necessity filtering 共同作用的结果。
 
-#### 5.2 长上下文能力
-*   **Needle-in-a-Haystack (视频版)**:
-    *   在长达 **30分钟** (对应 256K tokens) 的视频中，模型能够 100% 准确定位到插入的 "needle" 帧并回答问题。
-    *   利用 YaRN 位置外推，模型甚至在 **2小时** (约 1M tokens) 的视频中仍保持 **99.5%** 的准确率。
-*   **MMLongBench-Doc**: Qwen3-VL-235B-A22B 达到了 **57.0%** (Instruct) 的 SOTA 表明。
+### 2. Multimodal Necessity Filtering：确保样本真的需要看图
 
-#### 5.3 文本中心能力
-令人惊讶的是，作为 VLM，Qwen3-VL 在纯文本任务上也极具竞争力。
-*   **MMLU-Pro**: Qwen3-VL-235B-A22B-Instruct 达到 **81.8**，与 DeepSeek V3 和 Qwen3-LLM 持平。
-*   **AIME-25 (数学竞赛)**: Qwen3-VL-235B-A22B-Thinking 达到 **89.7%**，超越了 OpenAI o3 (medium) 的高分。
-*   **LiveCodeBench v6**: Qwen3-VL-235B-A22B-Thinking 达到 **70.1%**，展示了强大的代码生成能力。
+**问题**：很多 multimodal dataset 里的 VQA 样本，**光看文本就能答对**。比如题目是"这张图里有几只猫？"，但选项里"3"和其他选项语义差距太大，模型从选项分布就能猜。
 
-#### 5.4 Agent 与 UI 理解
-*   **ScreenSpot Pro**: Qwen3-VL-235B-A22B 达到 SOTA。
-*   **OSWorld & AndroidWorld**: Qwen3-VL 在 GUI Agent 任务上表现优异，特别是 Qwen3-VL-32B 在 OSWorld 上达到 41 分，在 AndroidWorld 上达到 63.7 分，超越了当前的主流 VLM。
+这种样本训 VLM 没用，反而让模型学到 shortcut——不看图也能蒙对。
 
-#### 5.5 Ablation Study (消融实验)
-*   **DeepStack**: 消融实验显示，引入 DeepStack 后，模型在 InfoVQA, DocVQA, MMMU 等任务上均有显著提升（平均提升约 1.3%），证明了跨层特征融合的有效性。
-*   **Vision Encoder (Qwen3-ViT)**: 自研的 Qwen3-ViT 在 CLIP 预训练阶段保持了 ImageNet 性能，同时在 OmniBench (世界知识评估) 上超越 SigLIP-2 基线。
+**Qwen3-VL 的做法**：用 Qwen3-30B-nothink（不看图）跑一遍样本，能答对的全部 discard。只保留**真正需要看图才能答**的样本。
 
----
+**Intuition**：这相当于 data curation 里的"hard negative mining"。把简单样本扔掉，只留模型必须用 multimodal 能力才能解的。我估计这个 filtering 过滤掉了 30-50% 的数据。
 
-### 6. 总结与联想
+### 3. Tool-integrated RL：三个 reward 缺一不可
 
-**Qwen3-VL** 的发布标志着 **VLM 正在逐步消除与 Text-only LLM 在纯文本能力上的差距**。通过 **Interleaved MRoPE** 解决视频位置编码矛盾，通过 **DeepStack** 实现跨层级视觉特征融合，通过大规模 **SFT 和 RL** 赋予其 Agent 能力，Qwen3-VL 已经准备好作为 **Embodied AI**、**Agentic Workflow** 和 **Multimodal Code Intelligence** 的基础引擎。
+**问题**：让 VLM 学会 "thinking with images"——什么时候 zoom in、zoom in 哪、看到结果怎么 reason——很难。
 
-**可能的扩展联想**:
-*   **Embodied Robotics**: 结合 3D Grounding 和 Spatial Understanding 能力，该模型可以直接用于机器人的场景理解和动作规划。
-*   **Automated QA System**: 利用 256K 长上下文能力，可以瞬间读取并分析成百上千页的技术文档（如财报、法律文书），并提供精准摘要和问答。
-*   **Visual Debugging**: 结合 Coding 能力，不仅可以读图，还能看懂复杂的架构图、UML 图或代码截图的布局，辅助前端开发或系统设计。
+Qwen3-VL 用三个 reward：
+- **Answer Accuracy**：Qwen3-32B 评判最终答案对错
+- **Multi-Turn Reasoning**：Qwen2.5-VL-72B 评判是否正确解读 tool feedback
+- **Tool-Calling**：实际 tool 调用次数 vs Qwen2.5-VL-72B 估的"专家目标次数"
+
+**关键发现**：只用前两个 reward，模型会 degenerate 到**只用一次 tool call** 来 hack——反正一次 tool call 也能拿到 partial 信息，答案可能对，推理过程可能 OK。引入第三个 reward 后，模型被迫**根据任务难度调整 tool 次数**。
+
+**Intuition**：这其实是 RLHF 里经典的 reward hacking 问题。多 reward 互相制约，每个 reward 防 hack 的"漏洞"由另一个 reward 补上。这种 multi-objective RL 设计和 OpenAI o1 / R1 的思路一致。
+
+### 4. Strong-to-Weak Distillation：text-only 蒸馏提升 reasoning
+
+**做法**：用强大的 teacher model 在 text-only data 上 generate reasoning chain，然后让小 model 通过 off-policy + on-policy 两个阶段蒸馏。
+
+- **Off-policy**：teacher 输出做 SFT，让 student 学到 teacher 的 reasoning pattern
+- **On-policy**：student 自己 generate，然后 minimize KL divergence with teacher logits
+
+**Intuition**：off-policy 让 student 学到"成品"，但 student 的 distribution 和 teacher 不同；on-policy 让 student 在自己 distribution 上对齐 teacher，解决 distribution mismatch。
+
+这个 trick 让 Qwen3-VL 2B/4B/8B 这种小模型在 reasoning benchmark 上能打过比自己大几倍的 baseline。
 
 ---
 
-### 参考链接
+## 四、评估里让我"啊？"的几个点
 
-*   **GitHub Repository**: [https://github.com/QwenLM/Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)
-*   **Hugging Space**: [https://huggingface.co/Qwen](https://huggingface.co/Qwen)
-*   **ModelScope**: [https://modelscope.cn/organization/qwen](https://modelscope.cn/organization/qwen)
-*   **Official Site**: [https://chat.qwen.ai](https://chat.qwen.ai)
-*   **Paper (ArXiv)**: [arXiv:2511.21631v2](https://arxiv.org/abs/2511.21631)
-* 
-### 1. Interleaved MRoPE 详细技术解析
+### 1. VLM 在 AIME-25 上超过 text-only LLM
 
-**Interleaved MRoPE** (Multimodal Rotary Positional Embeddings) 是 Qwen3-VL 在位置编码上的一项核心升级，旨在解决多模态大模型在处理长视频和复杂空间布局时遇到的位置信息建模难题。
+Table 5：Qwen3-VL-235B-A22B-Instruct 在 AIME-25 上 74.7，DeepSeek V3 0324 只有 46.6。**VLM 数学竟然比纯 text LLM 还强**。
 
-#### 1.1 背景：为什么需要 MRoPE？
-在 Transformer 架构中，RoPE (Rotary Positional Embeddings) 通过旋转矩阵将绝对位置信息注入到 Query 和 Key 向量中，使其依赖于相对位置。对于视觉和多模态模型，输入不仅包含序列维度，还包含空间维度（图像的长、宽）和时间维度（视频的帧序）。
+这说明 multimodal 训练不仅没退化数学，反而 enhance 了。我猜测原因是：
+- Vision 数据里的几何、图表、公式训练让模型对 spatial reasoning 更敏感
+- Square-root reweighting + 大量 text 数据保底
+- Long-CoT 蒸馏从 reasoning teacher 那里继承了数学 chain
 
-为了同时建模这三种关系，Qwen 系列引入了 **MRoPE**，即将 RoPE 的 embedding 维度 $D$ 划分为三个子空间，分别用于编码时间、水平（高度）和垂直位置。
+### 2. 8B 在 video 上能打 Qwen2.5-VL-72B
 
-#### 1.2 Qwen2.5-VL 的痛点：频谱不平衡
-在 Qwen2.5-VL 中，MRoPE 采取了 **"Chunked" (分块)** 的分配方式。假设 Embedding 维度为 $D$，它可能会被简单切分为三段：
-*   $[0, D/3)$: 用于编码时间位置 $t$
-*   $[D/3, 2D/3)$: 用于编码水平位置 $h$
-*   $[2D/3, D)$: 用于编码垂直位置 $w$
+Paper 原文："Qwen3-VL 8B variant to achieve performance competitive with the significantly larger Qwen2.5-VL 72B model."
 
-**这种分块方式在处理长视频时存在严重缺陷**：
-1.  **频率隔离**：每个维度的频率谱被局限在了 Embedding 的特定切片中。例如，负责长距离时间依赖的高频通道可能全部集中在 $[0, D/3)$ 区间，而负责图像纹理高频特征的通道集中在 $[D/3, 2D/3)$。
-2.  **时间退化**：当处理长视频时，时间 ID 可能会非常大（例如 180,000 帧）。在分块 MRoPE 中，这会导致时间子空间内的旋转角度变得极其稀疏或极端，使得模型难以在长序列中精细定位。
-3.  **信息交互受阻**：由于不同模态的位置信息在通道维度上是物理隔离的，模型在注意力计算初期，很难在同一通道维度内同时聚合时间和空间信息，导致特征融合效率降低。
+这是 9x 的 size compression。Interleaved MRoPE + text timestamp + dense video caption 三者结合的效果。
 
-#### 1.3 Qwen3-VL 的突破：Interleaved (交织)
-为了解决上述问题，Qwen3-VL 提出了 **Interleaved MRoPE**。其核心思想是将 $t, h, w$ 的编码通道**均匀混合**，并在整个 Embedding 维度上交替分布。
+### 3. Tool > Size Scaling
 
-**具体原理**：
-我们将 Embedding 的每一对通道（RoPE 是对维度操作的）看作一个单位。对于第 $k$ 对通道，我们不再是简单地根据 $k$ 的范围决定它属于哪个维度，而是通过取模的方式来决定：
+Table 2 V* 上：Qwen3-VL-235B-Instruct 无 tool 是 85.9，加 tool 93.7。同 family 内，加 tool 一致带来 ~5 点提升。Paper 原文："the performance gains from integrating external tools consistently outweigh those from simply increasing model size."
 
-$$ \text{Coord}_k = \{t, h, w\}_{k \pmod 3} $$
+**这个 observation 我觉得是这篇 paper 最重要的 takeaway**。在 multimodal fine-grained perception 上，**agentic tool use 比 scale 模型更高效**。这呼应了 o1 时代"reasoning + tool" 范式。
 
-这意味着 Channel indices 的分配模式如下：
-*   Pair 0: Time ($t$)
-*   Pair 1: Horizontal ($h$)
-*   Pair 2: Vertical ($w$)
-*   Pair 3: Time ($t$)
-*   Pair 4: Horizontal ($h$)
-*   Pair 5: Vertical ($w$)
-*   ...以此类推
+### 4. 1M Token Needle-in-a-Haystack 99.5%
 
-**技术优势分析**：
-1.  **平衡的频率谱**：时间、水平和垂直的低频和高频成分现在均匀地散布在整个 $D$ 维空间中。这意味着，无论看 embedding 的哪一部分，模型都能同时接收到来自三个维度的位置信息。
-2.  **鲁棒的长视频理解**：由于时间信息不再集中在少数通道上，长序列带来的大 ID 不会导致某个特定子空间"过载"或"退化"。模型的注意力机制可以在任何深度层通过不同的通道组合来捕捉长程时间依赖。
-3.  **增强的时空耦合**：交织结构迫使模型在特征表示的微观层面上就要处理时空混合信息，这为后续的时空推理任务提供了更丰富的特征基础。
+256K native context 训练，用 YaRN 外推到 1M token，视频 needle-in-haystack 99.5%。这说明 RoPE frequency base 调整对长视频外推很有效，**不需要重新训练长 context**。
+
+### 5. VisuLogic 大幅领先
+
+Qwen3-VL-235B-Thinking 在 VisuLogic（visual logical reasoning）上 57.2，Gemini-2.5-Pro 31.6，GPT-5 28.5，Claude-Opus-4.1 27.9。**接近 2x 的领先**。这个 benchmark 是 visual logical reasoning，说明 Qwen3-VL 在 visual reasoning 上确实有优势，不只是 perception。
 
 ---
 
-### 2. Python 代码实现
+## 五、我自己读完后想再深挖的点
 
-下面提供一个基于 PyTorch 的 `InterleavedMRoPE` 实现示例。
+1. **DeepStack 用 3 层的依据**：Paper 没说为什么是 3 层不是 5 层或 2 层。更多层会更好还是 saturate？这值得做 ablation。
 
-该实现包含三个关键步骤：
-1.  **生成 Inv Freq**: 生成 RoPE 的逆频率基。
-2.  **构建 Coordinate Map**: 根据输入坐标为每个 embedding 维度挑选对应的 Time, Height 或 Width 坐标。
-3.  **Apply Rotation**: 计算旋转矩阵并应用到 Q 和 K 上。
+2. **Qwen3-ViT 的具体改动**：Table 11 显示 Qwen3-ViT 比 SigLIP-2 在 OmniBench 上 36.9 → 45.5，paper 只说"continuous training with dynamic resolutions"。具体改了什么？是数据变了还是 architecture 变了？
 
-```python
-import torch
-import torch.nn as nn
-import math
+3. **Text timestamp 的 token overhead**：超长视频（10K frames）会增加多少 token？Paper 没量化。如果每帧一个 timestamp，10K 帧 = 10K timestamp tokens，相对于 visual token 总数占比多大？
 
-class InterleavedMRoPE(nn.Module):
-    def __init__(self, dim, base=10000):
-        """
-        Args:
-            dim (int): The dimension of the attention head (must be divisible by 2).
-            base (int): The base for the geometric progression of frequencies.
-        """
-        super().__init__()
-        self.dim = dim
-        assert dim % 2 == 0, "Dimension must be even for RoPE."
-        
-        # 1. 生成逆频率 inv_freq
-        # 对应 RoPE 公式：theta_i = base^(-2i/d)
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
-        self.register_buffer('inv_freq', inv_freq)
-        
-    def forward(self, q, k, coords):
-        """
-        Args:
-            q (Tensor): Query tensor, shape (Batch, SeqLen, Heads, HeadDim)
-            k (Tensor): Key tensor, shape (Batch, SeqLen, Heads, HeadDim)
-            coords (Tensor): Normalized coordinates for each token.
-                             Structure: (Batch, SeqLen, 3) -> [Time(t), Height(h), Width(w)]
-                             Text tokens usually have coords like (t_idx, 0, 0).
-                             Image tokens have coords like (0, h_idx, w_idx).
-                             Video tokens have coords like (t_idx, h_idx, w_idx).
-        
-        Returns:
-            q_rot, k_rot: Rotated query and key tensors.
-        """
-        batch, seq_len, _, head_dim = q.shape
-        device = q.device
-        
-        # 确保 coords 形状正确
-        assert coords.shape == (batch, seq_len, 3)
-        
-        # 2. 构建 Interleaved 选择矩阵
-        # 我们有 head_dim // 2 对通道 (RoPE 按 pair 操作)。
-        # 目标是为每一对通道选择对应的坐标 [t, h, w]。
-        # 模式顺序：t -> h -> w -> t -> h -> w ...
-        
-        num_pairs = head_dim // 2
-        # 创建一个索引张量，范围从 0 到 num_pairs - 1
-        pair_indices = torch.arange(num_pairs, device=device)
-        
-        # 核心逻辑：Interleaved
-        # 对 3 取模：0=t, 1=h, 2=w
-        coord_selector = pair_indices % 3  # Shape: (num_pairs,)
-        
-        # Broadcast 坐标以适配每一个 token 和每一对通道
-        # coords shape: (Batch, SeqLen, 3)
-        # 我们需要将其扩展到 (Batch, SeqLen, num_pairs, 3) 以便通过索引选择 (..., coord_selector)
-        coords_expanded = coords.unsqueeze(2).expand(-1, -1, num_pairs, -1) # (B, S, Pairs, 3)
-        
-        # 使用 coord_selector 作为索引从 coords_expanded 中选值
-        # 这一步实现了：第 k 对通道取 coords[:, :, k % 3] 的值
-        # gather 在 dim=3 上操作， indices 需要扩维为 (B, S, Pairs, 1)
-        selected_pos = torch.gather(coords_expanded, 3, coord_selector.view(1, 1, -1, 1)).squeeze(-1)
-        # selected_pos shape: (Batch, SeqLen, num_pairs)
-        
-        # 3. 计算旋转角度 freqs = pos * inv_freq
-        # inv_freq shape: (num_pairs,)
-        # freqs shape: (Batch, SeqLen, num_pairs)
-        freqs = selected_pos * self.inv_freq.view(1, 1, -1)
-        
-        # 4. 应用旋转
-        # 将 freqs 扩展到实部和虚部，并计算 cos 和 sin
-        # 此时我们将 (B, S, Pairs) 扩展为 (B, S, Pairs, 2) 对应 cos, sin
-        freqs = freqs.unsqueeze(-1) # (B, S, Pairs, 1)
-        freqs_cos = torch.cos(freqs)
-        freqs_sin = torch.sin(freqs)
-        
-        # 将 freqs 拼接回 (B, S, HeadDim) 形态以匹配 q/k
-        # RoPE 旋转公式通常需要交替应用 cos 和 sin，这里采用标准的广播乘法
-        # freqs 形状变为 (1, SeqLen, 1, HeadDim) 以匹配 q, k
-        
-        # 重构 freqs_cos 和 freqs_sin 以匹配 HeadDim 维度
-        # 当前是 (B, S, Pairs, 1) -> squeeze(-1) -> (B, S, Pairs)
-        # 注意：PyTorch RoPE 实现通常把 cos 和 sin 都做成一个 tensor
-        # 这里为了演示清晰，我们构造 rotation tensor
-        
-        # 构建旋转复数或直接应用旋转矩阵
-        # q_new = q * cos - q_rotated * sin
-        # 将 q, k 重塑为 (..., Pairs, 2) 以便于向量化操作
-        
-        q = q.view(batch, seq_len, -1, num_pairs, 2).float()
-        k = k.view(batch, seq_len, -1, num_pairs, 2).float()
-        
-        # 广播 freqs_cos 和 freqs_sin 以匹配 q 的维度
-        # freqs shape: (Batch, SeqLen, num_pairs)
-        freqs_cos = freqs_cos.squeeze(-1).unsqueeze(2).unsqueeze(4) # (B, S, 1, Pairs, 1)
-        freqs_sin = freqs_sin.squeeze(-1).unsqueeze(2).unsqueeze(4) # (B, S, 1, Pairs, 1)
-        
-        # 应用旋转
-        # 旋转公式:
-        # x' = x * cos - y * sin
-        # y' = x * sin + y * cos
-        # 这里 q[..., 0] 是 x, q[..., 1] 是 y
-        
-        q_rot = torch.stack([
-            q[..., 0] * freqs_cos - q[..., 1] * freqs_sin,
-            q[..., 0] * freqs_sin + q[..., 1] * freqs_cos
-        ], dim=-1)
-        
-        k_rot = torch.stack([
-            k[..., 0] * freqs_cos - k[..., 1] * freqs_sin,
-            k[..., 0] * freqs_sin + k[..., 1] * freqs_cos
-        ], dim=-1)
-        
-        # 恢复形状
-        q_rot = q_rot.reshape(batch, seq_len, -1, head_dim).type_as(q)
-        k_rot = k_rot.reshape(batch, seq_len, -1, head_dim).type_as(k)
-        
-        return q_rot, k_rot
+4. **Multimodal Necessity Filtering 的副作用**：过滤掉"text 可解"的样本，会不会丢掉一些"text + vision synergy"的样本？比如某题 vision 提供 redundant cue，对 reasoning 有帮助但不必要。这种 sample 被过滤掉是不是 loss？
 
-# ==========================================
-# 测试与演示
-# ==========================================
+5. **Thinking mode 的 inference cost**：AIME-25 max output 81,920 token。生产中 80K thinking token 的 latency 和 cost 是什么概念？ROI 怎么算？
 
-if __name__ == "__main__":
-    # 模拟参数
-    batch_size = 2
-    seq_len = 10       # 假设有 10 个 tokens (可能混合了文本和图像)
-    num_heads = 4
-    head_dim = 64      # 必须能被 2 整除
-    
-    # 初始化 MRoPE
-    mrope = InterleavedMRoPE(dim=head_dim, base=10000)
-    
-    # 生成随机的 Q 和 K
-    q = torch.randn(batch_size, seq_len, num_heads, head_dim)
-    k = torch.randn(batch_size, seq_len, num_heads, head_dim)
-    
-    # 构造不同类型的坐标
-    # 假设 batch 中第一个样本包含文本，第二个包含视频帧
-    
-    coords = torch.zeros(batch_size, seq_len, 3)
-    
-    # Sample 1: 纯文本序列
-    # 坐标格式: [time_index, 0, 0]
-    coords[0, :, 0] = torch.arange(seq_len) # t = 0, 1, 2...
-    coords[0, :, 1] = 0
-    coords[0, :, 2] = 0
-    
-    # Sample 2: 图像 patches (2x2 grid image)
-    # 坐标格式: [0, h_index, w_index]
-    # 假设 seq_len=4 对应 4 个 patches
-    height_idx = torch.tensor([0, 0, 1, 1])
-    width_idx = torch.tensor([0, 1, 0, 1])
-    coords[1, :4, 0] = 0      # t = 0
-    coords[1, :4, 1] = height_idx
-    coords[1, :4, 2] = width_idx
-    # 剩余的 tokens 假设是文本
-    coords[1, 4:, 0] = torch.arange(4, seq_len)
-    coords[1, 4:, 1] = 0
-    coords[1, 4:, 2] = 0
-    
-    print(f"Input Q shape: {q.shape}")
-    print(f"Input Coords sample 0: {coords[0, :5]}")
-    print(f"Input Coords sample 1: {coords[1, :5]}")
-    
-    # 执行旋转
-    q_rot, k_rot = mrope(q, k, coords)
-    
-    print(f"\nRotated Q shape: {q_rot.shape}")
-    
-    # 验证旋转性质：Rotary Embedding 应当保持相对距离的敏感性
-    # 这里只是简单输出来证明代码运行正确
-    print("Interleaved MRoPE executed successfully.")
-```
+6. **VLM 不退化 text 的归因**：square-root reweighting、necessity filtering、strong-to-weak distillation 三个因素各贡献多少？如果做 ablation，哪个最关键？Paper 没拆开做。
 
-### 代码关键点解析
-
-1.  **`self.inv_freq` 的生成**:
-    根据 RoPE 定义 $\Theta = \{\theta_i = 10000^{-2i/d}, i \in [1, 2, ..., d/2]\}$，这里我们只对复数对的实部计算逆频率。
-
-2.  **`coord_selector = pair_indices % 3`**:
-    这是实现 Interleaved 的核心。
-    *   对于维度 $d=64$ 的 Head，我们有 32 对。
-    *   `pair_indices` 为 `[0, 1, 2, ..., 31]`。
-    *   `coord_selector` 变为 `[0, 1, 2, 0, 1, 2, ..., 1]` (最后一个取决于余数)。
-    *   这使得第 0 对通道使用坐标 `coords[..., 0]` (即 Time)，第 1 对使用 `coords[..., 1]` (Height)，以此类推。
-
-3.  **广播机制**:
-    我们利用 `torch.gather` 将三维的坐标张量 映射到四维的特征空间 中。这确保了对于 Sequence 维度上的每一个 token，以及 Head 维度上的每一对通道，我们都选取了正确的坐标值来计算旋转角度。
-
-这种实现方式不仅高效，而且完全复现了 Qwen3-VL 技术中提出的 Interleaved MRoPE 思想，即通过**通道交织**来平衡时空频率谱，从而强化模型对长视频和复杂场景的理解能力。
-
-
-在 Qwen3-VL 的架构中，**Vision-Language Merger (视觉-语言融合器)** 扮演着至关重要的角色。可以说，如果把 Vision Encoder 比作“眼睛”，LLM 比作“大脑”，那么 Merger 就是连接这两者的“神经突触”或“翻译官”。
-
-它的核心任务是将视觉编码器输出的高维视觉特征图，映射并压缩成大语言模型能够理解和处理的“视觉 Token”。
-
-以下从架构设计、工作机制、多层级交互以及训练策略四个维度详细拆解。
+7. **Tool > Size 的边界**：V*、HRBench 这种 fine-grained perception task 上 tool 大幅提升。但 reasoning task（如 AIME）上 tool use 是否同样有效？还是只在 perception 上有效？这是个开放问题。
 
 ---
 
-### 1. 基础架构与核心机制
+## 六、一句话总结
 
-#### 1.1 硬件结构：两层 MLP (Two-Layer MLP)
-Qwen3-VL 使用了一个非常经典的 **2层 前馈神经网络 (MLP)** 作为融合器。
-*   **输入**: 视觉编码器的特征图。假设输入是 $B \times H \times W \times D_{vision}$（其中 $H, W$ 是图像patch的网格尺寸，$D_{vision}$ 是视觉编码器的隐藏层维度）。
-*   **非线性变换**: 通过激活函数（如 GeLU 或 Swish）引入非线性，捕捉复杂的映射关系。
-*   **输出**: 对齐到 LLM 隐藏层维度 $D_{llm}$ 的向量。
+Qwen3-VL 是一个 **engineering-focused 的 VLM 工作**，每个 trick 都在解决一个具体痛点：
+- Interleaved MRoPE 解决长视频外推
+- DeepStack 解决 fine-grained perception
+- Text timestamp 解决时间表达
+- Square-root reweighting 解决 text 退化
+- Necessity filtering 解决 multimodal shortcut
+- Multi-reward RL 解决 tool use hacking
 
-#### 1.2 空间压缩与 Token 化
-根据报告描述，Merger 的一个关键操作是 **"2×2 压缩" (Compress 2×2 visual features)**。
+最大的 takeaway 我觉得是 **"agentic tool use > scale"**——在 fine-grained multimodal 上，让模型学会用 tool 比堆参数更高效。这和 o1 时代的"reasoning is the new scaling" 思路一致。
 
-*   **机制**:
-    1.  **分组**: 将视觉编码器输出的 2D 特征网格划分为 $2 \times 2$ 的patch。也就是说，每相邻的 4 个空间位置的特征向量被分为一组。
-    2.  **融合**: 模型通常会对这 4 个特征进行某种形式的聚合（例如 Flatten 后输入到 MLP，或者先进行简单的 Average Pooling）。
-    3.  **投影**: 将聚合后的特征通过 2层 MLP 映射到一个单一的向量。
-    4.  **输出**: 最终，每 $2 \times 2$ 的图像区域产生 **1 个** 视觉 Token。
+Paper 链接：
+- https://github.com/QwenLM/Qwen3-VL
+- https://huggingface.co/Qwen
 
-*   **数学表达**:
-    设视觉特征图为 $F \in \mathbb{R}^{H \times W \times D_{vision}}$。
-    定义区域 $P_{i,j} = \{F_{x, y} | x \in \{2i, 2i+1\}, y \in \{2j, 2j+1\}\}$。
-    视觉 Token $T_{i,j}$ 的生成过程为：
-    $$ T_{i,j} = \text{Merger\_MLP}(\text{Aggregate}(P_{i,j})) $$
-    其中 $\text{Aggregate}$ 可能是简单的拼接或求和。
-
-*   **优势**:
-    1.  **减少计算开销**: 有效地将视觉 Token 的数量减少了 4 倍（$H \times W \to \frac{H}{2} \times \frac{W}{2}$），从而减轻 LLM 的计算压力和显存占用，使其能处理更高分辨率的图像。
-    2.  **扩大感受野**: 将相邻像素的信息聚合在一起，让生成的每个 Token 拥有更宽的视野和更丰富的局部语义。
+如果让我用一个词总结这篇 paper 的 design philosophy，是 **"elegant hacks"**——每个 trick 都不是惊天动地的 architecture innovation，但组合起来效果显著。这其实是工程界最珍贵的能力：**在已有 framework 里找到对的 intervention 点**。
 
 ---
 
-### 2. DeepStack 中的“专用”Merger
+# Qwen3-VL 技术报告深度解读
 
-Qwen3-VL 的 Merger 并不是单一的模块，它在支持 **DeepStack** 机制时起到了关键的连接作用。
+## 一、整体定位与核心贡献
 
-#### 2.1 多层级特征提取
-DeepStack 的核心思想是利用 Vision Encoder 的**中间层**特征，而不仅仅是最后一层的特征。
-*   从 ViT 的不同深度（例如浅层、中层、深层）提取特征。浅层特征包含更多纹理和边缘信息，深层特征包含更多语义信息。
+Qwen3-VL 是 Qwen 系列中目前最强的 vision-language model，原生支持 256K token 的 interleaved context（文本+图像+视频），同时推出了 dense (2B/4B/8B/32B) 和 MoE (30B-A3B / 235B-A22B) 两种架构变体。三大核心支柱：
 
-#### 2.2 专用 Mergers
-为了将这些不同层级的特征注入到 LLM 的对应层级，Qwen3-VL 部署了 **"Specialized Mergers" (专用融合器)**。
-*   **架构**: 对于每一组从 ViT 提取的中间层特征，都有一个独立的、与其对应的 Merger 模块。
-*   **路由逻辑**:
-    *   ViT Layer $L_1$ 的特征 $\xrightarrow{\text{Merger}_1}$ LLM Layer $L_{deep}$ 的 Hidden States。
-    *   ViT Layer $L_2$ 的特征 $\xrightarrow{\text{Merger}_2}$ LLM Layer $L_{deep+1}$ 的 Hidden States。
-    *   ViT Layer $L_3$ 的特征 $\xrightarrow{\text{Merger}_3}$ LLM Layer $L_{deep+2}$ 的 Hidden States。
-*   **注入方式**: 如前所述，这些 Merger 的输出不是简单地拼接到序列末尾，而是通过 **Residual Addition (残差连接)** 直接加到 LLM 对应层的隐藏状态上。
+1. **Pure-text understanding 不退化**：在很多情况下甚至超过同规模的 text-only backbone
+2. **Long-context comprehension**：原生 256K window，支持长文档和长视频的 faithful retention、retrieval、cross-referencing
+3. **Advanced multimodal reasoning**：在 MMMU、MathVista、MathVision 等 benchmark 上达到 SOTA
 
-这使得 Merger 不仅仅是“降维器”，更像是一个“特征调节器”，确保不同抽象程度的视觉特征能够完美适配 LLM 每一层的特征空间。
+架构上有三个关键升级：Interleaved MRoPE、DeepStack、Text-based timestamp alignment。训练侧引入了 square-root reweighting 来平衡 text 和 multimodal 的 loss。
+
+参考链接：
+- GitHub: https://github.com/QwenLM/Qwen3-VL
+- HuggingFace: https://huggingface.co/Qwen
 
 ---
 
-### 3. 训练策略：冷启动对齐
+## 二、架构详解
 
-在 Qwen3-VL 的预训练流程中，Merger 的训练策略非常独特，体现了其作为“翻译层”的特殊地位。
+整体沿用 Qwen2.5-VL 的三模块结构：Vision Encoder + MLP-based Vision-Language Merger + LLM。但每个模块都有重要改造。
 
-#### Stage S0: Vision-Language Alignment
-这是预训练的第一阶段。
-*   **冻结**: **Vision Encoder 和 LLM Backbone 的所有参数都被冻结** (Frozen)，不可更新。
-*   **独活**: 只有 **MLP Merger 的参数是可训练的**。
-*   **目的**:
-    1.  **快速对齐**: 既然只有 Merger 可动，模型会迫使 Merger 寻找一条从 Vision Domain 到 LLM Domain 的“最优路径”，快速学会如何将视觉特征“翻译”成 LLM 看得懂的语言。
-    2.  **破坏性最小**: 这种策略保护了 Vision Encoder 强大的图像理解能力和 LLM 强大的语言推理能力不受破坏。
-    3.  **效率极高**: 相比于全参数训练，只训练一个小型的 MLP 收敛极快，计算成本极低。
+### 2.1 Vision Encoder
+
+采用 **SigLIP-2** 架构（Tschannen et al., 2025, https://arxiv.org/abs/2502.14786），并继续训练以支持 dynamic resolution。具体而言，遵循 CoMP（Chen et al., 2025, https://arxiv.org/abs/2503.18931）的方法，在 ViT 内部使用 **2D-RoPE**，并基于 input size 对 absolute position embeddings 做插值。
+
+- 默认使用 **SigLIP2-SO-400M**（对于较大 LLM）
+- 小规模 LLM（2B/4B）使用 **SigLIP2-Large (300M)**
+
+**Intuition**：SigLIP-2 相比 SigLIP 在语义对齐、localization、dense features 上都有改进，这对后续 grounding、OCR 等 task 至关重要。2D-RoPE 让 ViT 天然支持任意分辨率输入，避免了传统 fixed-size patch 的 resolution bottleneck。
+
+### 2.2 Interleaved MRoPE（核心创新 1）
+
+**背景**：Qwen2-VL（Wang et al., 2024c, https://arxiv.org/abs/2409.12191）引入了 MRoPE（Multimodal RoPE），将 embedding 维度划分为三组：
+- temporal (t)
+- horizontal (h)
+- vertical (w)
+
+每组分配不同的 rotary frequencies。
+
+**问题**：这种 partition 会导致 **frequency spectrum imbalance**。低频主要给 t，高频主要给 h/w。在长视频理解中，temporal 维度需要既能感知短时事件（高频）又能感知长时结构（低频），但原始 MRoPE 让 t 主要是低频，丢失了 short-term temporal precision。
+
+**Qwen3-VL 的解法**（inspired by Huang et al., 2025）：将 t、h、w **interleaved** 地分布到 embedding 维度上，让每个轴都均匀地占据低频和高频 band。
+
+**形式化描述**：设 embedding dimension 为 $d$，rotary frequency 第 $i$ 维为：
+$$\theta_i = 10000^{-2i/d}, \quad i \in \{0, 1, \ldots, d/2 - 1\}$$
+
+原始 MRoPE：
+$$\text{axis}(i) = \begin{cases} t & i \in [0, d/6) \\ h & i \in [d/6, d/3) \\ w & i \in [d/3, d/2) \end{cases}$$
+
+Interleaved MRoPE：
+$$\text{axis}(i) = \begin{cases} t & i \mod 3 = 0 \\ h & i \mod 3 = 1 \\ w & i \mod 3 = 2 \end{cases}$$
+
+**Intuition**：想象你在做 Fourier 分析，如果 t 只在低频 band，那么模型对 short-burst events（比如 1 秒内的 action）的位置感知会很差。Interleaved 之后，每个轴都有"细粒度"和"粗粒度"两种尺度，长视频理解能力显著提升。这其实和 RoPE 在纯文本中的 interleave frequency 思想类似——让每一层 attention 都能 attend 到不同尺度的位置关系。
+
+### 2.3 DeepStack（核心创新 2）
+
+借鉴 **DeepStack**（Meng et al., 2024, NeurIPS 2024, https://arxiv.org/abs/2411.16535），但做了重要改造。
+
+**原始 DeepStack**：将 multi-scale visual inputs（不同分辨率）的 token 注入 LLM 不同层。
+
+**Qwen3-VL 的改造**：从 ViT 的**不同中间层**抽取 features，分别通过 dedicated merger 投影到 visual token，然后**直接加到 LLM 前 3 层的 hidden states** 上。
+
+**架构图解析**（Figure 1）：
+
+```
+ViT Layer 1 → Merger_1 → + → LLM Layer 1 hidden state
+ViT Layer 2 → Merger_2 → + → LLM Layer 2 hidden state  
+ViT Layer 3 → Merger_3 → + → LLM Layer 3 hidden state
+ViT Layer 4 → ... → final visual tokens → (standard pathway to LLM input)
+```
+
+**Intuition**：ViT 的浅层捕获 low-level features（edges、textures），深层捕获 high-level semantics（object categories、scene gist）。传统 VLM 只把 ViT 最后一层输出喂给 LLM，相当于让 LLM 只看到"已经抽象过的"视觉信息。DeepStack 让 LLM 早期层就能接触到 raw 视觉细节，相当于在 LLM 内部做了一个 **hierarchical visual-textual fusion**。
+
+这点对 OCR、DocVQA、InfoVQA 这种 fine-grained 任务特别重要——从 Table 12 的 ablation 可以看到，InfoVQA 从 71.9 → 74.2，DocVQA 从 89.5 → 91.1。
+
+**为什么不增加 context length**：因为 DeepStack 是在 hidden state 层面做 residual connection，而不是引入新的 token 序列。visual token 数量保持不变。
+
+### 2.4 Video Timestamp（核心创新 3）
+
+**Qwen2.5-VL 的做法**：用 T-RoPE（time-synchronized MRoPE），将 temporal position ID 直接绑定到绝对时间。比如第 5 秒的帧，temporal position id = 5。
+
+**两个问题**：
+1. 长视频会产生**超大且稀疏的 temporal position ids**，比如 2 小时视频，最后一个帧的 position id 可能是 7200，而 RoPE 在外推到训练时未见过的 position id 时性能急剧下降
+2. 训练需要在**各种 fps 上均匀采样**，数据构建成本极高
+
+**Qwen3-VL 的做法**：用**显式的文本 timestamp token** 标记每个 frame group，比如 `<3.0 seconds>`。训练时同时使用 seconds 和 HMS (hours:minutes:seconds) 两种格式，让模型学会解读不同 timecode 表示。
+
+**Intuition**：这其实是一个很 elegant 的"hack"——把 temporal 信息从 positional encoding 退化为 text token，相当于让 LLM 用自己最擅长的"语言理解"来处理时间。代价是稍微增加 context length，但换来的是：
+- 时间信息**显式可读**，模型可以做 video grounding、dense captioning 等 task
+- 不需要训练各种 fps，数据构建成本降低
+- 时间表达方式更灵活（可以用 "3.5s" 也可以用 "00:00:03.500"）
+
+这种做法和 Chen et al., 2024b 的 TimeMarker（https://arxiv.org/abs/2411.18211）思路一致。
+
+### 2.5 Vision-Language Merger
+
+沿用 Qwen2.5-VL 的设计：两层 MLP，将 2×2 的 visual feature 压缩成 1 个 visual token，对齐到 LLM hidden dim。但额外部署了**专门的 merger** 来支持 DeepStack 的多层 feature 投影。
 
 ---
 
-### 4. 代码实现与架构图示
+## 三、Pre-Training 详解
 
-下面提供了一个简化的 Python (PyTorch) 实现来模拟 Qwen3-VL 的 Merger 结构，特别是 2x2 压缩逻辑。
+### 3.1 四阶段训练（Table 1）
 
-```python
-import torch
-import torch.nn as nn
+| Stage | Objective | Trainable | Token Budget | Seq Len |
+|-------|-----------|----------|--------------|---------|
+| S0 | Vision-Language Alignment | Merger only | 67B | 8,192 |
+| S1 | Multimodal Pre-Training | All | ~1T | 8,192 |
+| S2 | Long-Context Pre-Training | All | ~1T | 32,768 |
+| S3 | Ultra-Long-Context Adaptation | All | 100B | 262,144 |
 
-class VisionLanguageMerger(nn.Module):
-    def __init__(self, vision_dim, llm_dim, hidden_dim=None, compression="2x2"):
-        """
-        Args:
-            vision_dim: Dimension of the output features from Vision Encoder (e.g., SigLIP-2).
-            llm_dim: Dimension of the LLM's hidden state (e.g., Qwen3).
-            hidden_dim: Intermediate dimension for the 2-layer MLP.
-            compression: Strategy for reducing tokens. "2x2" as per Qwen3-VL report.
-        """
-        super().__init__()
-        self.compression = compression
-        
-        # Define Hidden Dimension if not provided (typically 2x or 4x input dim)
-        if hidden_dim is None:
-            hidden_dim = llm_dim * 2
-            
-        # The core 2-layer MLP
-        self.mlp = nn.Sequential(
-            nn.Linear(vision_dim * 4, hidden_dim), # Input: 2x2 features flattened
-            nn.GELU(),
-            nn.Linear(hidden_dim, llm_dim)       # Output: Aligned to LLM dimension
-        )
-        
-    def forward(self, vision_features):
-        """
-        Args:
-            vision_features: Tensor of shape (Batch, Height, Width, Vision_Dim)
-                             Represents feature map from Vision Encoder.
-        
-        Returns:
-            visual_tokens: Tensor of shape (Batch, (H/2)*(W/2), LLM_Dim)
-                           Compressed and merged visual tokens for LLM.
-        """
-        B, H, W, D_v = vision_features.shape
-        
-        if self.compression == "2x2":
-            # Reshape to group spatial grid into 2x2 patches
-            # We need H and W to be divisible by 2
-            assert H % 2 == 0 and W % 2 == 0, "Height and Width must be even for 2x2 compression"
-            
-            # View as (B, H/2, 2, W/2, 2, D_v) -> this splits grid into 2x2 blocks
-            vision_features = vision_features.view(B, H // 2, 2, W // 2, 2, D_v)
-            
-            # Permute to (B, H/2, W/2, 2, 2, D_v) to bring the patch dimensions together
-            vision_features = vision_features.permute(0, 1, 3, 2, 4, 5).contiguous()
-            
-            # Flatten the 2x2 grid: (B, H/2, W/2, 4 * D_v)
-            # Here we are concatenating the 4 features in the spatial grid
-            patches = vision_features.view(B, (H // 2) * (W // 2), 4 * D_v)
-            
-            # Pass through MLP
-            # Input: (B, Num_Patches, 4 * D_v) -> Output: (B, Num_Patches, LLM_Dim)
-            visual_tokens = self.mlp(patches)
-            
-            return visual_tokens
-            
-        else:
-            raise ValueError("Only 2x2 compression supported in this implementation.")
+**S0 的 intuition**：先冻结 ViT 和 LLM，只训练 merger，让 projection 层学会把 visual feature 翻译到 LLM 的语义空间。这避免了早期 multimodal signal 破坏 LLM 已经学好的 text representation。
 
-# ==========================================
-# 模拟 DeepStack 的多 Merger 路由
-# ==========================================
+**S1-S3 的递进 context**：S1 在 8K 上建立基础能力，S2 扩展到 32K 让模型处理长文档和长视频，S3 在 256K 上做 ultra-long adaptation。这是典型的 **progressive context extension**，和 LLaMA、Qwen3 纯文本模型的 long-context training 一脉相承。
 
-class DeepStackModule(nn.Module):
-    def __init__(self, num_mergers, vision_dim, llm_dim):
-        super().__init__()
-        # 为每一层特征创建一个独立的 Merger
-        self.mergers = nn.ModuleList([
-            VisionLanguageMerger(vision_dim, llm_dim) for _ in range(num_mergers)
-        ])
-        
-    def forward(self, intermediate_vision_features, llm_hidden_states, target_indices):
-        """
-        Args:
-            intermediate_vision_features: List of tensors, shape (B, H, W, D_v)
-            llm_hidden_states: Current LLM hidden states
-            target_indices: List of target LLM layer indices for injection
-        """
-        for i, (feat, target_idx) in enumerate(zip(intermediate_vision_features, target_indices)):
-            # 1. Merge visual features
-            tokens = self.mergers[i](feat) # (B, N_tokens, D_llm)
-            
-            # 2. Residual Injection into LLM Layer (Simplified illustration)
-            # In reality, you would access specific layers within LLM block
-            # Here we simulate the operation on the provided tensor slice
-            # llm_hidden_states[..., target_idx] += tokens 
-            pass 
-        
-        return llm_hidden_states
+### 3.2 Square-Root Reweighting（关键 loss 改进）
 
-# 测试
-if __name__ == "__main__":
-    # 假设 SigLIP-2 输出维度 1024, Qwen3 隐藏维度 4096
-    # 输入特征图: Batch=1, Height=64, Width=64, Dim=1024
-    fake_vision_feat = torch.randn(1, 64, 64, 1024)
-    
-    merger = VisionLanguageMerger(vision_dim=1024, llm_dim=4096)
-    
-    # 执行融合
-    output_tokens = merger(fake_vision_feat)
-    
-    print(f"输入 Vision Features Shape: {fake_vision_feat.shape}")
-    print(f"输出 Visual Tokens Shape: {output_tokens.shape} -> (Batch, Tokens, LLM_Dim)")
-    print(f"Token 数量减少因子: {(64*64) / (32*32)} = 4.0") # 由于 2x2 压缩
-```
+从 per-sample loss 改为 **square-root-normalized per-token loss**。
 
-### 总结
+形式化：设一个 batch 中有 $N$ 个样本，第 $i$ 个样本有 $T_i$ 个 token。原始 per-sample loss：
+$$\mathcal{L}_{\text{sample}} = \frac{1}{N} \sum_{i=1}^{N} \frac{1}{T_i} \sum_{t=1}^{T_i} \ell_{i,t}$$
 
-Vision-Language Merger 的设计哲学体现了 **"少即是多"** 和 **"分而治之"**:
+Square-root reweighted loss：
+$$\mathcal{L}_{\text{sqrt}} = \frac{1}{\sum_i \sqrt{T_i}} \sum_{i=1}^{N} \frac{\sqrt{T_i}}{T_i} \sum_{t=1}^{T_i} \ell_{i,t} = \frac{1}{\sum_i \sqrt{T_i}} \sum_{i=1}^{N} \frac{1}{\sqrt{T_i}} \sum_{t=1}^{T_i} \ell_{i,t}$$
 
-1.  **效率**: 通过 2x2 空间压缩，显著降低了 LLM 处理高分辨率图像的计算负担，这是支持原生分辨率输入的关键。
-2.  **对齐**: 在 Stage S0 的冷启动训练中，Merger 充当了唯一的可学习变量，高效地搭建起了视觉和语言模态之间的桥梁。
-3.  **深度**: 通过配合 DeepStack 的专用 Merger，实现了从浅层纹理到深层语义的跨层级特征注入，让 LLM 具备了类似人类视觉皮层的分层感知能力。
+**Intuition**：
+- 纯 token-level loss（$\frac{1}{\sum T_i} \sum \ell_{i,t}$）会让长样本主导（长文档有 100K token，短 QA 只有 50 token）
+- 纯 sample-level loss（$\frac{1}{N} \sum \frac{1}{T_i} \sum \ell_{i,t}$）会让短样本过度加权，每个 short sample 的 token 都被放大
+- Square-root 是 $\sqrt{T}$ scaling，介于两者之间：长样本仍有更多权重，但不是线性，避免短样本被淹没
 
+这种 reweighting 让 text（一般短）和 multimodal（图像 token 多）之间达到更好的平衡，同时不让 text 能力退化。从结果看（Table 5/6），Qwen3-VL 在纯 text benchmark 上和 Qwen3 text-only 持平甚至略胜，证明这个策略有效。
 
-在 Qwen3-VL 的架构中，**Vision-Language Merger (视觉-语言融合器)** 扮演着至关重要的角色。可以说，如果把 Vision Encoder 比作“眼睛”，LLM 比作“大脑”，那么 Merger 就是连接这两者的“神经突触”或“翻译官”。
+### 3.3 Pre-Training 数据（重要细节）
 
-它的核心任务是将视觉编码器输出的高维视觉特征图，映射并压缩成大语言模型能够理解和处理的“视觉 Token”。
+#### Image Caption & Interleaved Data
+- 用 Qwen2.5-VL-32B fine-tune 一个 recaptioning model，基于原始 raw text 生成更 fine-grained 的 caption
+- Deduplication **只在 recaptioned text 上做**（用 semantic similarity），保留 visual diversity
+- 用 clustering（Johnson et al., 2019 FAISS, Douze et al., 2024, Diao et al., 2025 CLIP）在 visual embedding 空间找 sparse regions，定向 augmentation
+- Interleaved data 来自 web，用 lightweight Qwen scorer 做 domain classification，排除广告、clickbait
+- Book-scale interleaved：用 Qwen2.5-VL-7B 做 multimodal parsing，对齐 text 和 figures
+- Ultra-long subset：合并连续页到 256K token 序列，要求 minimum page count 和 minimum image-to-text ratio
 
-以下从架构设计、工作机制、多层级交互以及训练策略四个维度详细拆解。
+#### Knowledge
+- 覆盖 12+ semantic categories：animals、plants、landmarks、food、vehicles、electronics、clothing 等
+- **Importance-based sampling**：高 prominence entity 多采样，低 prominence 少量但保留
+- 用 LLM 生成 rich description，包含 attributes、context、spatial layout、interactions
+
+#### OCR & Document Parsing
+- OCR：30M in-house samples，coarse-to-fine pipeline，从 10 种语言扩展到 39 种语言
+- Document Parsing：3M PDFs from Common Crawl，10 种 document type 各 300K
+- 两种表示：**QwenVL-HTML**（fine-grained element-level bounding box）和 **QwenVL-Markdown**（只有 images 和 tables localized，tables 用 LaTeX）
+
+**Intuition**：双表示让模型既能做精确 layout 解析（HTML），又能做轻量级 markdown 输出。HTML 训练让模型学会 element-level 几何，Markdown 是它的"压缩版"，相当于内置了一种 distillation。
+
+#### Grounding & Counting
+- 坐标系归一化到 **[0, 1000]** 范围（Qwen2.5-VL 是 [0, 1000] 还是 absolute pixel？这里改进了 robustness）
+- Box grounding：开源数据 + 自动合成 pipeline（Qwen2.5-VL 提候选 → Grounding DINO + Qwen2.5-VL 定位 → 质量过滤）
+- Point grounding：PixMo + 检测数据 + fine-grained 合成
+- Counting：direct、box-based、point-based 三种 task formulation
+
+#### Spatial Understanding & 3D
+- Spatial：relational annotation（"cup to the left of laptop"）、affordance（"graspable"、"pressable"）、action-conditioned query
+- 3D Grounding：9-DoF 3D bounding box（x_center, y_center, z_center, x_size, y_size, z_size, roll, pitch, yaw）
+- 统一到 virtual camera coordinate system（Omni3D, Brazil et al., 2023, https://arxiv.org/abs/2207.10660）
+
+#### Code
+- Text-only code：复用 Qwen3-Coder 的 code corpus
+- Multimodal code：UI screenshot → HTML/CSS、image → SVG、visual programming、flowchart/diagram → code、LaTeX equation 转写
+
+#### Video
+- **Dense Caption Synthesis**：short-to-long 策略生成 timestamp-interleaved 的 story-level description
+- **Spatio-Temporal Video Grounding**：object、action、person 三层 annotation
+- **Length-Adaptive Sampling**：动态调整 fps 和 max frame count，避免 sparse sampling 丢信息
+
+#### STEM
+- **Divide-and-conquer**：先独立训练 visual perception 和 linguistic reasoning，再 synergy
+- 视觉感知：1M point-grounding + 2M perception VQA，6M diagram caption
+- 多模态推理：60M K-12/undergrad exercises，12M long-CoT multimodal reasoning（用 strong reasoning model 的 rollout，rule + model 双重验证）
+- 关键：**Multimodal Necessity Filtering**——如果 Qwen3-30B-nothink 不看图就能解，就 discard，确保样本真正需要 multimodal
+
+#### Agent
+- GUI：cross-platform (desktop/mobile/web) data，self-evolving trajectory production + human audit
+- Function Calling：多模态 function calling trajectory 合成，迭代直到 query 解决
+- Search：multimodal factual lookup trajectories with online image search + text search
 
 ---
 
-### 1. 基础架构与核心机制
+## 四、Post-Training 详解
 
-#### 1.1 硬件结构：两层 MLP (Two-Layer MLP)
-Qwen3-VL 使用了一个非常经典的 **2层 前馈神经网络 (MLP)** 作为融合器。
-*   **输入**: 视觉编码器的特征图。假设输入是 $B \times H \times W \times D_{vision}$（其中 $H, W$ 是图像patch的网格尺寸，$D_{vision}$ 是视觉编码器的隐藏层维度）。
-*   **非线性变换**: 通过激活函数（如 GeLU 或 Swish）引入非线性，捕捉复杂的映射关系。
-*   **输出**: 对齐到 LLM 隐藏层维度 $D_{llm}$ 的向量。
+### 4.1 三阶段 post-training
 
-#### 1.2 空间压缩与 Token 化
-根据报告描述，Merger 的一个关键操作是 **"2×2 压缩" (Compress 2×2 visual features)**。
+1. **SFT**：32K context 第一阶段 → 256K context 第二阶段（聚焦长文档和长视频）。分叉为 non-thinking 和 thinking 两种数据格式
+2. **Strong-to-Weak Distillation**：用 text-only data distill，提升 reasoning
+3. **Reinforcement Learning**：Reasoning RL + General RL
 
-*   **机制**:
-    1.  **分组**: 将视觉编码器输出的 2D 特征网格划分为 $2 \times 2$ 的patch。也就是说，每相邻的 4 个空间位置的特征向量被分为一组。
-    2.  **融合**: 模型通常会对这 4 个特征进行某种形式的聚合（例如 Flatten 后输入到 MLP，或者先进行简单的 Average Pooling）。
-    3.  **投影**: 将聚合后的特征通过 2层 MLP 映射到一个单一的向量。
-    4.  **输出**: 最终，每 $2 \times 2$ 的图像区域产生 **1 个** 视觉 Token。
+### 4.2 SFT 数据
 
-*   **数学表达**:
-    设视觉特征图为 $F \in \mathbb{R}^{H \times W \times D_{vision}}$。
-    定义区域 $P_{i,j} = \{F_{x, y} | x \in \{2i, 2i+1\}, y \in \{2j, 2j+1\}\}$。
-    视觉 Token $T_{i,j}$ 的生成过程为：
-    $$ T_{i,j} = \text{Merger\_MLP}(\text{Aggregate}(P_{i,j})) $$
-    其中 $\text{Aggregate}$ 可能是简单的拼接或求和。
+- 1.2M samples，1/3 text-only，2/3 image-text + video-text
+- 多语言、single-turn + multi-turn、interleaved
+- **两阶段 sequence length**：先 32K 一 epoch，再 256K 一 epoch（curriculum with 32K sampling）
+- **两阶段 filtering**：Query Filtering（用 Qwen2.5-VL 识别 unverifiable query）+ Response Filtering（rule-based + model-based）
 
-*   **优势**:
-    1.  **减少计算开销**: 有效地将视觉 Token 的数量减少了 4 倍（$H \times W \to \frac{H}{2} \times \frac{W}{2}$），从而减轻 LLM 的计算压力和显存占用，使其能处理更高分辨率的图像。
-    2.  **扩大感受野**: 将相邻像素的信息聚合在一起，让生成的每个 Token 拥有更宽的视野和更丰富的局部语义。
+### 4.3 Long-CoT Cold Start Data
 
----
+- 1:1 VL : text 比例
+- 三个 filtering：
+  1. **Difficulty Curation**：只保留 baseline 模型 pass rate 低或 response 长的样本
+  2. **Multimodal Necessity Filtering**：discard Qwen3-30B-nothink 不看图就能解的题
+  3. **Response Quality Control**：去除 repetition、language mixing、guessing
 
-### 2. DeepStack 中的“专用”Merger
+### 4.4 Strong-to-Weak Distillation
 
-Qwen3-VL 的 Merger 并不是单一的模块，它在支持 **DeepStack** 机制时起到了关键的连接作用。
+- **Off-policy Distillation**：teacher 输出做 response distillation
+- **On-policy Distillation**：student 自己 generate，然后 minimize KL divergence with teacher logits
 
-#### 2.1 多层级特征提取
-DeepStack 的核心思想是利用 Vision Encoder 的**中间层**特征，而不仅仅是最后一层的特征。
-*   从 ViT 的不同深度（例如浅层、中层、深层）提取特征。浅层特征包含更多纹理和边缘信息，深层特征包含更多语义信息。
+**Intuition**：off-policy 让 student 学到 teacher 的"成品"，on-policy 让 student 在自己的 distribution 上对齐 teacher，避免 distribution mismatch。这种两阶段 distillation 在 Qwen3 系列已经验证有效。
 
-#### 2.2 专用 Mergers
-为了将这些不同层级的特征注入到 LLM 的对应层级，Qwen3-VL 部署了 **"Specialized Mergers" (专用融合器)**。
-*   **架构**: 对于每一组从 ViT 提取的中间层特征，都有一个独立的、与其对应的 Merger 模块。
-*   **路由逻辑**:
-    *   ViT Layer $L_1$ 的特征 $\xrightarrow{\text{Merger}_1}$ LLM Layer $L_{deep}$ 的 Hidden States。
-    *   ViT Layer $L_2$ 的特征 $\xrightarrow{\text{Merger}_2}$ LLM Layer $L_{deep+1}$ 的 Hidden States。
-    *   ViT Layer $L_3$ 的特征 $\xrightarrow{\text{Merger}_3}$ LLM Layer $L_{deep+2}$ 的 Hidden States。
-*   **注入方式**: 如前所述，这些 Merger 的输出不是简单地拼接到序列末尾，而是通过 **Residual Addition (残差连接)** 直接加到 LLM 对应层的隐藏状态上。
+### 4.5 Reinforcement Learning
 
-这使得 Merger 不仅仅是“降维器”，更像是一个“特征调节器”，确保不同抽象程度的视觉特征能够完美适配 LLM 每一层的特征空间。
+#### Reasoning RL
+- 用 **SAPO**（Soft Adaptive Policy Optimization, Gao et al., 2025, https://arxiv.org/abs/2511.20347）
+- 30K RL queries，每 query 采样 16 个 response，过滤 pass rate > 90% 的 easy query
+- Task-specific format prompt，不靠 explicit format reward
+- **Code-switching penalty**：response 语言和 prompt 语言不一致就惩罚
 
----
+#### General RL
+- 多 task RL：VQA、caption、OCR、document parsing、grounding、clock recognition
+- 两个维度：Instruction Following（format、length、JSON）+ Preference Alignment
+- **Corrective mechanism**：unlearn SFT 的错误 prior（counter-intuitive counting、complex clock）
+- **Hybrid reward**：Rule-Based（高精度 verifiable task）+ Model-Based（Qwen2.5-VL-72B-Instruct 或 Qwen3 作为 judge）
 
-### 3. 训练策略：冷启动对齐
+### 4.6 Thinking with Images（创新点）
 
-在 Qwen3-VL 的预训练流程中，Merger 的训练策略非常独特，体现了其作为“翻译层”的特殊地位。
+两阶段训练 paradigm：
 
-#### Stage S0: Vision-Language Alignment
-这是预训练的第一阶段。
-*   **冻结**: **Vision Encoder 和 LLM Backbone 的所有参数都被冻结** (Frozen)，不可更新。
-*   **独活**: 只有 **MLP Merger 的参数是可训练的**。
-*   **目的**:
-    1.  **快速对齐**: 既然只有 Merger 可动，模型会迫使 Merger 寻找一条从 Vision Domain 到 LLM Domain 的“最优路径”，快速学会如何将视觉特征“翻译”成 LLM 看得懂的语言。
-    2.  **破坏性最小**: 这种策略保护了 Vision Encoder 强大的图像理解能力和 LLM 强大的语言推理能力不受破坏。
-    3.  **效率极高**: 相比于全参数训练，只训练一个小型的 MLP 收敛极快，计算成本极低。
+**Stage 1**：合成 ~10k grounding examples，在 Qwen2.5-VL-32B 上做 SFT，emulate "think → act → analyze feedback → answer" 行为，再做 multi-turn tool-integrated RL
+
+**Stage 2**：用 Stage 1 训好的 agent distill 出 120k 多轮 agentic interaction，对 Qwen3-VL 做 cold-start SFT + tool-integrated RL
+
+**三种 reward**：
+1. **Answer Accuracy Reward**：Qwen3-32B 评判最终答案对错
+2. **Multi-Turn Reasoning Reward**：Qwen2.5-VL-72B 评判是否正确解读 tool feedback
+3. **Tool-Calling Reward**：实际 tool call 次数 vs expert-estimated target
+
+**关键观察**：早期模型会 degenerate 到只用一次 tool call 来 hack 前两个 reward，所以必须引入 tool-calling reward 来 promote adaptive tool exploration。
+
+**Intuition**：这其实就是 OpenAI o1 / R1-style RL 的 multimodal 版本。让模型学会"什么时候 zoom in、zoom in 哪里、看到结果怎么 reason"，而不是无脑用 tool 或完全不用 tool。
 
 ---
 
-### 4. 代码实现与架构图示
+## 五、评估结果关键发现
 
-下面提供了一个简化的 Python (PyTorch) 实现来模拟 Qwen3-VL 的 Merger 结构，特别是 2x2 压缩逻辑。
+### 5.1 Multimodal Reasoning（Table 2）
 
-```python
-import torch
-import torch.nn as nn
+Qwen3-VL-235B-A22B-Thinking 在 MathVista_mini、MathVision、MathVerse、ZeroBench、LogicVista、VisuLogic 上达到 SOTA。ZeroBench 是一个 "impossible visual benchmark"（Roberts et al., 2025, https://arxiv.org/abs/2502.09696），Qwen3-VL-235B-Thinking 拿到 4 分（vs 其他模型大多 1-3 分），这是相当显著的。
 
-class VisionLanguageMerger(nn.Module):
-    def __init__(self, vision_dim, llm_dim, hidden_dim=None, compression="2x2"):
-        """
-        Args:
-            vision_dim: Dimension of the output features from Vision Encoder (e.g., SigLIP-2).
-            llm_dim: Dimension of the LLM's hidden state (e.g., Qwen3).
-            hidden_dim: Intermediate dimension for the 2-layer MLP.
-            compression: Strategy for reducing tokens. "2x2" as per Qwen3-VL report.
-        """
-        super().__init__()
-        self.compression = compression
-        
-        # Define Hidden Dimension if not provided (typically 2x or 4x input dim)
-        if hidden_dim is None:
-            hidden_dim = llm_dim * 2
-            
-        # The core 2-layer MLP
-        self.mlp = nn.Sequential(
-            nn.Linear(vision_dim * 4, hidden_dim), # Input: 2x2 features flattened
-            nn.GELU(),
-            nn.Linear(hidden_dim, llm_dim)       # Output: Aligned to LLM dimension
-        )
-        
-    def forward(self, vision_features):
-        """
-        Args:
-            vision_features: Tensor of shape (Batch, Height, Width, Vision_Dim)
-                             Represents feature map from Vision Encoder.
-        
-        Returns:
-            visual_tokens: Tensor of shape (Batch, (H/2)*(W/2), LLM_Dim)
-                           Compressed and merged visual tokens for LLM.
-        """
-        B, H, W, D_v = vision_features.shape
-        
-        if self.compression == "2x2":
-            # Reshape to group spatial grid into 2x2 patches
-            # We need H and W to be divisible by 2
-            assert H % 2 == 0 and W % 2 == 0, "Height and Width must be even for 2x2 compression"
-            
-            # View as (B, H/2, 2, W/2, 2, D_v) -> this splits grid into 2x2 blocks
-            vision_features = vision_features.view(B, H // 2, 2, W // 2, 2, D_v)
-            
-            # Permute to (B, H/2, W/2, 2, 2, D_v) to bring the patch dimensions together
-            vision_features = vision_features.permute(0, 1, 3, 2, 4, 5).contiguous()
-            
-            # Flatten the 2x2 grid: (B, H/2, W/2, 4 * D_v)
-            # Here we are concatenating the 4 features in the spatial grid
-            patches = vision_features.view(B, (H // 2) * (W // 2), 4 * D_v)
-            
-            # Pass through MLP
-            # Input: (B, Num_Patches, 4 * D_v) -> Output: (B, Num_Patches, LLM_Dim)
-            visual_tokens = self.mlp(patches)
-            
-            return visual_tokens
-            
-        else:
-            raise ValueError("Only 2x2 compression supported in this implementation.")
+**VisuLogic**（Xu et al., 2025, https://arxiv.org/abs/2504.15279）上：Qwen3-VL-235B-Thinking 57.2，Gemini-2.5-Pro 31.6，GPT-5 28.5，Claude-Opus-4.1 27.9。这是 visual logical reasoning benchmark，差距悬殊。
 
-# ==========================================
-# 模拟 DeepStack 的多 Merger 路由
-# ==========================================
+### 5.2 Long Document（MMLongBench-Doc）
 
-class DeepStackModule(nn.Module):
-    def __init__(self, num_mergers, vision_dim, llm_dim):
-        super().__init__()
-        # 为每一层特征创建一个独立的 Merger
-        self.mergers = nn.ModuleList([
-            VisionLanguageMerger(vision_dim, llm_dim) for _ in range(num_mergers)
-        ])
-        
-    def forward(self, intermediate_vision_features, llm_hidden_states, target_indices):
-        """
-        Args:
-            intermediate_vision_features: List of tensors, shape (B, H, W, D_v)
-            llm_hidden_states: Current LLM hidden states
-            target_indices: List of target LLM layer indices for injection
-        """
-        for i, (feat, target_idx) in enumerate(zip(intermediate_vision_features, target_indices)):
-            # 1. Merge visual features
-            tokens = self.mergers[i](feat) # (B, N_tokens, D_llm)
-            
-            # 2. Residual Injection into LLM Layer (Simplified illustration)
-            # In reality, you would access specific layers within LLM block
-            # Here we simulate the operation on the provided tensor slice
-            # llm_hidden_states[..., target_idx] += tokens 
-            pass 
-        
-        return llm_hidden_states
+Qwen3-VL-235B-A22B-Instruct 57.0% / Thinking 56.2%，达到 SOTA。这验证了 256K context + 长文档数据 pipeline 的有效性。
 
-# 测试
-if __name__ == "__main__":
-    # 假设 SigLIP-2 输出维度 1024, Qwen3 隐藏维度 4096
-    # 输入特征图: Batch=1, Height=64, Width=64, Dim=1024
-    fake_vision_feat = torch.randn(1, 64, 64, 1024)
-    
-    merger = VisionLanguageMerger(vision_dim=1024, llm_dim=4096)
-    
-    # 执行融合
-    output_tokens = merger(fake_vision_feat)
-    
-    print(f"输入 Vision Features Shape: {fake_vision_feat.shape}")
-    print(f"输出 Visual Tokens Shape: {output_tokens.shape} -> (Batch, Tokens, LLM_Dim)")
-    print(f"Token 数量减少因子: {(64*64) / (32*32)} = 4.0") # 由于 2x2 压缩
-```
+### 5.3 3D Grounding（Table 2）
 
-### 总结
+在 Omni3D 上（ARKitScenes、Hypersim、SUN RGB-D），Qwen3-VL-235B-A22B 显著超过 Gemini-2.5-Pro。SUN RGB-D 上 Thinking 39.4 vs Gemini 34.2，超 5.2 点。这说明 9-DoF 3D grounding 数据 + normalized coordinate 起作用了。
 
-Vision-Language Merger 的设计哲学体现了 **"少即是多"** 和 **"分而治之"**:
+### 5.4 Fine-grained Perception with Tool
 
-1.  **效率**: 通过 2x2 空间压缩，显著降低了 LLM 处理高分辨率图像的计算负担，这是支持原生分辨率输入的关键。
-2.  **对齐**: 在 Stage S0 的冷启动训练中，Merger 充当了唯一的可学习变量，高效地搭建起了视觉和语言模态之间的桥梁。
-3.  **深度**: 通过配合 DeepStack 的专用 Merger，实现了从浅层纹理到深层语义的跨层级特征注入，让 LLM 具备了类似人类视觉皮层的分层感知能力。
+V*（Wu & Xie, 2024, https://arxiv.org/abs/2312.14135）上 Qwen3-VL-235B-Thinking + tool 拿 93.7，HRBench-4K 85.4，HRBench-8K 82.4。
 
-### 1. Text-based Video Timestamp (基于文本的视频时间戳) 详细解析
+**重要发现**：**tool 带来的提升 > 模型 size 提升**。在 Qwen3-VL family 内，加 tool 一致带来 ~5 点 V* 提升。这是 "scaling tool-integrated agentic learning is a highly promising path forward" 的实证。
 
-**Text-based Video Timestamp** 是 Qwen3-VL 在视频处理模块中的一项关键架构升级。它的核心思想是将视频的时间维度信息，从隐式的数学编码（如 T-RoPE）转变为**显式的、人类可读的文本 Token**，并作为前缀注入到视频特征流中。
+### 5.5 Video Understanding
 
-这一改变极大地提升了模型在长视频理解和精确时间定位任务上的表现。
+Qwen3-VL 8B 已经能和 Qwen2.5-VL 72B 竞争。这归功于 interleaved MRoPE + textual timestamp + temporally dense caption 三者结合。
+
+Needle-in-a-Haystack（Figure 3）：30 分钟视频（256K token）100% accuracy，2 小时视频（1M token via YaRN extrapolation）99.5% accuracy。这非常 impressive。
+
+### 5.6 Text-Centric（Table 5/6）
+
+Qwen3-VL-235B-A22B-Instruct 在 AIME-25 74.7（超过 DeepSeek V3 0324 的 46.6），LiveCodeBench v6 54.3（超过 DeepSeek V3 的 45.2）。这意味着 VLM 已经在数学和代码上超过了同规模的纯 text LLM——**multimodal 训练没有 degrade text 能力，反而 enhance 了**。
+
+Thinking 版本：AIME-25 89.7，HMMT-25 77.4，LiveCodeBench v6 70.1，超过 OpenAI o3 (medium) 的 88.9 / 77.5 / 58.6。这在 VLM 中是首次达到这种 reasoning level。
+
+### 5.7 Ablation Study
+
+#### Qwen3-ViT vs SigLIP-2（Table 11）
+Qwen3-ViT 在 OmniBench（in-house holistic evaluation）上从 36.9 → 45.5，大幅提升。集成到 VLM 后，OCRB、AI2D、RLWRQA、InfoVQA、Omni 都提升。
+
+#### DeepStack（Table 12）
+15B-A2B LLM + 200B token pretraining，DeepStack 让 AVG 从 74.7 → 76.0。最大提升在 OCRB (81.0 → 83.6)、InfoVQA (71.9 → 74.2)、DocVQA (89.5 → 91.1)——全是 fine-grained 任务，符合 intuition。
 
 ---
 
-### 2. 背景：为什么要放弃 T-RoPE？
+## 六、关键 Intuition 总结
 
-在 Qwen2.5-VL 中，视频的时间位置主要通过 **T-RoPE** (Time-synchronized MRoPE) 来编码。虽然有效，但在处理长视频时面临两大瓶颈：
+1. **Interleaved MRoPE 的本质**：让每个 spatial-temporal 轴都有"显微镜+望远镜"两种视角，长视频既不丢 short-term event，也不丢 long-term structure。
 
-#### 2.1 时间 ID 的稀疏性
-在传统的 RoPE 或 MRoPE 机制中，时间 $t$ 被映射为一个离散的索引 ID（例如帧序号或秒数）。
-*   **短视频**: ID 较小（如 0-100），旋转频率的变化平滑，模型容易捕捉相对时间关系。
-*   **长视频**: 对于数小时的视频，时间 ID 可能会变得非常大（如 $t=180,000$ 秒）。在 RoPE 的频率公式 $\theta_i = \text{base}^{-2i/d} \times \text{pos}$ 中，当 $\text{pos}$ 极大时，导致某些维度的旋转值变得极其稀疏或剧烈震荡。
-*   **后果**: 这种数值上的极端变化破坏了 RoPE 的平滑性，使得模型难以建立长距离的时间依赖关系。
+2. **DeepStack 的本质**：让 LLM 早期层就接触 raw 视觉细节，相当于在 LLM 内部做 hierarchical feature fusion，特别利好 OCR/DocVQA 这种需要 fine-grained 视觉的任务。
 
-#### 2.2 数据采样成本高
-为了让 T-RoPE 学会适应不同的视频时长和帧率，训练数据需要覆盖极其广泛的 FPS 设置（从 15fps 到 60fps 甚至更高），并且在时间轴上分布均匀。构建这样庞大的高质量视频数据集成本极高。
+3. **Text-based timestamp 的本质**：把 temporal grounding 从 positional encoding 退化为 text understanding，利用 LLM 最强的能力处理时间，避免 RoPE 外推问题。
 
----
+4. **Square-root reweighting 的本质**：在 token-level 和 sample-level loss 之间找平衡，既不让长样本主导，也不让短样本淹没。
 
-### 3. Text-based Timestamp 的核心方案
+5. **Multimodal Necessity Filtering 的本质**：确保训练样本真正需要看图，避免模型学到"通过文本 cue 就能猜答案"的 shortcut。
 
-Qwen3-VL 采用了一种非常直观且高效的策略：**让模型“读”时间，而不是“算”时间**。
+6. **Tool-integrated RL 的本质**：让模型学会 "when to zoom, where to zoom, how to reason about zoomed result"，三种 reward（answer、reasoning、tool count）共同防止 reward hacking。
 
-#### 3.1 实现原理
-对于视频的每一个 temporal patch（时间片的图像特征），在其特征序列的最前方**前缀**一个格式化的文本字符串 Token。
+7. **Strong-to-Weak Distillation 的本质**：用 text-only data distill 提升 reasoning，让小模型继承大模型的 reasoning chain，比单纯 SFT 更有效。
 
-*   **输入**: 第 $i$ 帧图像，对应的视频时间戳为 $T$ 秒。
-*   **处理**:
-    1.  将 $T$ 转换为文本字符串，如 `<3.0>` 或 `<00:00:03>`。
-    2.  将该字符串通过 LLM 的 Tokenizer 进行分词，得到文本 Token IDs。
-    3.  将 Token IDs 嵌入为 Embedding。
-    4.  将该 Embedding 作为序列的起始，拼接在该帧的 Visual Tokens 之前。
-
-#### 3.2 双格式训练策略
-为了增强模型的鲁棒性和泛化能力，Qwen3-VL 在训练阶段使用了两种时间格式，并要求模型学会对齐和理解它们：
-1.  **秒数格式**: `<3.5>` 或 `<120.0>`。适合精确的时间描述。
-2.  **HMS 格式**: `<00:00:03.5>` 或 `<00:02:00.0>` (Hours:Minutes:Seconds)。符合人类阅读习惯，非常适合长视频（如电影、长会议），避免出现巨大的数字导致数值预测失真。
-
-**公式化表示**:
-假设视频帧 $f_t$ 的视觉特征为 $V_t$，时间戳文本为 $S_t$，TokenEmbedding 函数为 $\mathcal{E}$，则输入序列 $I_t$ 构建如下：
-$$ I_t = [ \mathcal{E}(S_t), V_t ] $$
-整个视频的输入流为：
-$$ I_{video} = Concat(I_0, I_1, ..., I_N) $$
+8. **VLM 不退化 text 的关键**：square-root reweighting + 保留大量 text-only 数据 + strong-to-weak distillation from text teacher。
 
 ---
 
-### 4. 技术优势与深度解析
+## 七、个人观察与开放问题
 
-#### 4.1 利用 LLM 的先验知识
-这是该方案最聪明的地方。大语言模型（LLM）在预训练阶段已经阅读了海量的文本，它天然理解**数字的大小关系**（10 大于 5）、**进制换算**（60秒=1分钟）以及**时间的语义**（After, Before, Duration）。
-通过将时间转成文本，Qwen3-VL 直接复用了 LLM 强大的逻辑推理能力来处理时间，而不需要从头从视觉数据中学习这些常识。
+1. **DeepStack 只用前 3 层**：为什么是 3 层？更多层会更好还是 over-saturate？这值得后续 ablation。
 
-#### 4.2 实现 "Time Grounding" (时间定位) 的零样本能力
-当用户询问：“视频第 15 分 30 秒发生了什么？”时：
-*   **T-RoPE 模型**: 需要将 "15:30" 内部映射到一个隐式的时间位置 ID，再去对齐注意力，这在长序列中容易漂移。
-*   **Text-based 模型**: 模型只需要在输入流中找到前缀为 `<00:15:30>` 的那一段，并将注意力集中在该 Token 及其后续的 Visual Tokens 上。这本质上变成了一个 **Key-Value Retrieval** (键值检索) 问题，精度和鲁棒性大幅提升。
+2. **Text timestamp 的 token overhead**：每个 frame group 一个 timestamp token，对超长视频（10K+ frames）会增加多少 context？这和 dense frame sampling 的 trade-off 是什么？
 
-#### 4.3 缓解长序列外推问题
-对于 256K 甚至更长的上下文，数值型位置编码容易出现外推能力下降。但文本Token 不受此影响，因为 `<01:00:00>` 无论放在序列的哪个位置，它所代表的语义是一致的。
+3. **Qwen3-ViT 的具体改动**：paper 没详细说 Qwen3-ViT 相比 SigLIP-2 改了什么，只说"continuous training with dynamic resolutions"。OmniBench 上从 36.9 → 45.5 是大跃升，背后机制值得挖掘。
+
+4. **Thinking mode 的 inference cost**：max output length 设到 32K，AIME-25 等任务甚至 81,920 token。这种 thinking budget 在 production 中的 ROI 如何？
+
+5. **Multimodal Necessity Filtering 的副作用**：可能过滤掉一些"虽然 text 可解但 multimodal 帮助 reasoning"的样本。这是一个 trade-off。
+
+6. **256K native + 1M via YaRN**：YaRN 外推到 4x context 仍能保持 99.5% needle-in-haystack，这暗示 RoPE 的 frequency base 调整可能不需要重新训练。但 1M token 的 latency 和 cost 在 production 中是否可接受？
+
+7. **Tool use > size scaling**：Table 2 中 Qwen3-VL-235B-Instruct + tool 在 V* 上 93.7，超过 Thinking 模式的 85.9。这暗示 agentic tool use 是比 model scaling 更高效的路径，呼应了 Sora / o1 时代的"reasoning + tool"范式。
 
 ---
 
-### 5. 架构图示与伪代码
-
-#### 5.1 架构图示
-
-```text
-Video Frame Index:    Frame 0           Frame 1          Frame 2 ...
-                      (0.0s)            (0.5s)           (1.0s)
-                         |                 |                 |
-                         v                 v                 v
-          +-------------------+  +-------------------+  +-------------------+
-          | Text Token "<0.0>"|  | Text Token "<0.5>"|  | Text Token "<1.0>"|  <-- Timestamp Prefix
-          +-------------------+  +-------------------+  +-------------------+
-                         |                 |                 |
-          +-------------------+  +-------------------+  +-------------------+
-          | Visual Token [Patch Features V0]         | ...           |
-          +-------------------+  +-------------------+  +-------------------+
-                         |                 |                 |
-                         v                 v                 v
-        ==================================================================>
-          LLM Input Token Sequence: [<0.0>, V0_0, V0_1, ..., <0.5>, V1_0, V1_1, ...]
-```
-
-#### 5.2 Python 代码实现
-
-以下代码展示了如何生成这些时间戳 Token 并将其与视觉特征混合。
-
-```python
-import torch
-
-class VideoTimestampProcessor:
-    def __init__(self, tokenizer):
-        self.tokenizer = tokenizer
-
-    def format_timestamp(self, seconds):
-        """
-        生成双格式时间戳文本。
-        Args:
-            seconds (float): 视频当前帧的起始时间（秒）
-        Returns:
-            list[str]: 包含秒数格式和 HMS 格式的字符串列表
-        """
-        # 1. 秒数格式 (e.g., <3.5>)
-        sec_str = f"<{seconds:.1f}>"
-        
-        # 2. HMS 格式 (e.g., <00:00:03.5>)
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = seconds % 60
-        hms_str = f"<{hours:02d}:{minutes:02d}:{secs:04.1f}>"
-        
-        # 在训练时可以随机选择返回一个，或者返回拼接后的列表
-        # 这里为了演示返回两种，实际使用时根据训练策略定
-        return [sec_str, hms_str]
-
-    def embed_timestamps(self, seconds_list, embedding_layer):
-        """
-        将时间戳字符串转换为 Embedding 并返回。
-        Args:
-            seconds_list: 每一帧的时间戳列表
-            embedding_layer: LLM 的 Token Embedding 层
-        Returns:
-            Tensor: (Batch/SeqLen, TimestampLen, D_model)
-        """
-        all_tokens = []
-        for sec in seconds_list:
-            # 获取文本字符串
-            text_strings = self.format_timestamp(sec)
-            
-            # 将字符串拼接成一个完整的字符串进行 Tokenize
-            # 注意: 也可以分别 Tokenize 再 sum 或 concat，这里采用拼接更简单
-            timestamp_text = " ".join(text_strings)
-            
-            # Tokenize
-            token_ids = self.tokenizer.encode(timestamp_text, add_special_tokens=False)
-            all_tokens.append(token_ids)
-            
-        # Padding 到最大长度
-        max_len = max(len(t) for t in all_tokens)
-        padded_tokens = torch.zeros(len(all_tokens), max_len, dtype=torch.long)
-        for i, t in enumerate(all_tokens):
-            padded_tokens[i, :len(t)] = torch.tensor(t)
-            
-        # 获取 Embeddings
-        timestamp_embeddings = embedding_layer(padded_tokens)
-        return timestamp_embeddings
-
-# ==========================================
-# 构建视频输入流 (Pseudocode)
-# ==========================================
-
-def build_video_input_stream(video_frames_features, video_seconds, tokenizer, llm_embed):
-    """
-    构建最终的 LLM 输入序列。
-    """
-    # 1. 生成时间戳 Embeddings
-    ts_processor = VideoTimestampProcessor(tokenizer)
-    ts_embeds = ts_processor.embed_timestamps(video_seconds, llm_embed) 
-    # Shape: (Num_Frames, T_Len, D_Model)
-    
-    # 2. 视觉 Patch Embeddings (假设已经是 LLM 维度)
-    # video_frames_features: (Num_Frames, Num_Patches_Per_Frame, D_Model)
-    
-    inputs = []
-    for i in range(len(video_seconds)):
-        # 获取当前帧的视觉特征
-        frame_feats = video_frames_features[i] # (Patches, D)
-        
-        # 获取当前帧的时间戳嵌入
-        timestamp_feats = ts_embeds[i]        # (T_Len, D)
-        
-        # 拼接: [Timestamp Tokens] + [Visual Patch Tokens]
-        # 确保维度匹配: 拼接时通常沿着 Sequence 维度 (dim=0)
-        
-        timestamp_seq = timestamp_feats.view(-1, timestamp_feats.shape[-1]) # (T_Len, D)
-        
-        # 将视觉特征也展平
-        visual_seq = frame_feats.view(-1, frame_feats.shape[-1])             # (Patches, D)
-        
-        # 拼接
-        combined_seq = torch.cat([timestamp_seq, visual_seq], dim=0)
-        
-        inputs.append(combined_seq)
-        
-    # 3. 将所有帧序列拼接成最终的 Video Stream
-    final_video_stream = torch.cat(inputs, dim=0) # (Total_Video_Tokens, D_Model)
-    
-    return final_video_stream
-
-# Example Usage
-# model_embed = ... (LLM's embedding layer)
-# frames = ... (List of feature tensors)
-# timestamps = [0.0, 0.5, 1.0, ...] (Corresponding to FPS)
-# stream = build_video_input_stream(frames, timestamps, tokenizer, model_embed)
-```
-
-### 总结
-
-Text-based Video Timestamp 是一种典型的 **"以自然理解代替数学拟合"** 的工程创新。
-
-*   **旧方案 (T-RoPE)**: 把时间视为连续的几何位置，依赖模型从数据中拟合位置编码分布，对长视频（长尾分布）和复杂 FPS 不友好。
-*   **新方案 (Text-based)**: 把时间视为离散的语义符号，直接写在视频流的每一帧开头。
-    *   **代价**: 极小的上下文长度开销（通常只需 1-4 个 token）。
-    *   **收益**: 模型瞬间获得了精确到秒级的时间感知能力，且具备了处理任意长度视频外推的鲁棒性。这使得 Qwen3-VL 能够胜任 Video Question Answering (VQA)、Temporal Grounding 和 Dense Captioning 等复杂视频任务。
-*
-
-
-我来搜索一下 Qwen3-VL 中 Interleaved MRoPE 的相关信息。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-我来详细讲解 Qwen3-VL 中 **Interleaved MRoPE**（Interleaved Multi-dimensional Rotary Position Embedding）技术。
-
-## 一、基本概念
-
-**Interleaved MRoPE** 是 Qwen3-VL 中引入的核心位置编码创新，用于处理多模态（文本、图像、视频）的时空位置信息。与传统的连续块分配方式不同，它采用 **交错式频率分配** 方法，确保时间、高度、宽度三个维度共享完整的旋转频率谱。
-
-### 设计背景
-
-在多模态 Transformer 中，需要联合编码：
-- **1D 文本序列**：线性位置
-- **2D 图像特征**：高度和宽度位置  
-- **3D 视频数据**：时间、高度、宽度位置
-
-## 二、与 MRoPE 的对比
-
-### 传统 MRoPE 的问题
-
-**传统 MRoPE** 采用连续块分配策略，将维度按 `[TTT...HHH...WWW]` 方式切分：
-
-```
-传统MRoPE维度分配示例（d_h=64）:
-│ 低频通道    │ 中频通道    │ 高频通道    │
-│ T T T H H H W W W │ ← 连续块分配
-│ 0-7        8-15      16-23
-```
-
-这导致的问题：
-1. **频谱不平衡**：时间位置只获得低频通道，长时推理能力受限
-2. **轴间融合不足**：不同维度信息隔离，难以学习跨模态关联
-3. **长视频推理下降**：超过10k帧后性能急剧衰减
-
-### Interleaved MRoPE 的改进
-
-**交错式分配** 采用轮询策略 `[T H W T H W T H W...]`：
-
-```
-Interleaved-MRoPE维度分配示例（d_h=64）:
-│ T H W │ T H W │ T H W │ T H W │ ← 交错轮询
-│ 0-2  │ 3-5  │ 6-8  │ 9-11 │
-```
-
-## 三、数学公式详解
-
-### 1. 经典 RoPE 回顾
-
-对于纯文本输入，Query/Key 对在位置 p 的 2D 旋转：
-
-```
-对于每个复平面 i (i = 0, ..., d_h/2-1):
-旋转角度 θ_i = 10000^(-2i/d_h)
-
-旋转矩阵 R(φ) = [[cos φ, -sin φ],
-                [sin φ,  cos φ]]
-
-[q'_2i, q'_{2i+1}]^T = R(p · θ_i) · [q_2i, q_{2i+1}]^T
-```
-
-### 2. Interleaved-MRoPE 核心公式
-
-对于视觉/视频 token，给定坐标 $(t, h, w)$：
-
-**轴分配规则**（轮询）：
-```
-axis(i) = i mod 3 ∈ {0, 1, 2} ≡ {t, h, w}
-```
-
-**旋转角度计算**：
-```
-θ_i = t · ω_i    if axis(i) = 0 (时间轴)
-θ_i = h · ω_i    if axis(i) = 1 (高度轴)  
-θ_i = w · ω_i    if axis(i) = 2 (宽度轴)
-```
-
-其中 **ω_i** 为基频率：
-```
-ω_min = 10000^(-(d_h/3-1)/(d_h/3))
-ω_max = 1.0
-
-ω_{α,k} = ω_min · (ω_max/ω_min)^{k/(m-1)}, α ∈ {t, h, w}
-
-其中 m = d_h/3 为每轴的旋转对数
-k = ⌊i/3⌋ 为轴内的频率索引
-```
-
-**Qwen3-VL 特定参数化**（d_h = 3m）：
-
-```python
-# 频率生成（伪代码）
-for α in {t, h, w}:
-    for k in range(m):
-        ω[α, k] = ω_min * (ω_max/ω_min)^{k/(m-1)}
-
-# 维度 j 的轴分配和频率
-α(j) = {t, h, w}[j mod 3]        # 轴分配
-k = ⌊j/3⌋                        # 频率索引
-
-# 应用旋转
-[q_{2j}, q_{2j+1}] → [q_{2j}, q_{2j+1}] R(p_{α(j)} · ω_{α(j),k})
-```
-
-### 3. 具体数值示例（H=32, d_model=2048, d_h=64）
-
-```python
-# 配置
-m = d_h / 3 = 21.33 ≈ 21
-d_h = 64 → 32个复平面
-
-# 频率范围（每轴）
-ω_min = 10000^(-20/21) ≈ 0.0005
-ω_max = 1.0
-
-# 21个频率每轴（几何分布）
-ω_t = [0.0005, 0.0013, 0.0034, ..., 0.9995]  # 21个时间频率
-ω_h = [0.0005, 0.0013, 0.0034, ..., 0.9995]  # 21个高度频率  
-ω_w = [0.0005, 0.0013, 0.0034, ..., 0.9995]  # 21个宽度频率
-
-# 交错映射示例
-平面0: axis = 0 mod 3 = t,  k = ⌊0/3⌋ = 0,  使用 ω_t[0]
-平面1: axis = 1 mod 3 = h,  k = ⌊1/3⌋ = 0,  使用 ω_h[0]
-平面2: axis = 2 mod 3 = w,  k = ⌊2/3⌋ = 0,  使用 ω_w[0]
-平面3: axis = 0 mod 3 = t,  k = ⌊3/3⌋ = 1,  使用 ω_t[1]
-平面4: axis = 1 mod 3 = h,  k = ⌊4/3⌋ = 1,  使用 ω_h[1]
-平面5: axis = 2 mod 3 = w,  k = ⌊5/3⌋ = 1,  使用 ω_w[1]
-...
-```
-
-## 四、架构图解析
-
-### Transformer 中 Interleaved-MRoPE 集成流程
-
-```
-输入序列 → [文本 token | 图像 patch | 视频 frame]
-           ↓
-        Q/K 线性投影
-           ↓
-┌─────────────────────────────────────────┐
-│  Modality Detection (模态检测)          │
-│  - Text: 使用 vanilla RoPE              │
-│  - Visual: 使用 Interleaved-MRoPE       │
-└─────────────────────────────────────────┘
-           ↓
-┌─────────────────────────────────────────┐
-│  Coordinate Assignment (坐标分配)       │
-│  文本: p = [0, 1, 2, ..., n-1]          │
-│  图像: (t=0, h, w)                     │
-│  视频: (t, h, w)                        │
-└─────────────────────────────────────────┘
-           ↓
-┌─────────────────────────────────────────┐
-│  Axis-Interleaved Rotation             │
-│  for each plane i=0 to d_h/2-1:        │
-│    axis = i mod 3                       │
-│    φ_i = position[axis] · ω_{axis,k}    │
-│    [q_2i, q_{2i+1}] = R(φ_i)·[q_2i,q]   │
-└─────────────────────────────────────────┘
-           ↓
-    Q', K' (旋转后)
-           ↓
-    Multi-Head Attention
-           ↓
-        输出序列
-```
-
-### Spatial-Reset 机制
-
-**问题**：高分辨率图像中位置索引过大导致旋转角度饱和
-
-**解决方案**：每行重置水平位置
-```
-传统: h 从 0 到 H-1 连续增长
-     w 从 0 到 W-1 连续增长
-
-Spatial-Reset:
-  for row in range(H):
-    h = row
-    for col in range(W):
-      w = col          # 每行从0开始
-      # 使用 (h, w) 作为坐标
-```
-
-## 五、实验数据
-
-### 1. 频率分配比例消融
-
-| t:h:w 比例 | Image | Video | Grounding | Overall |
-|-----------|-------|-------|-----------|---------|
-| 24:20:20  | 66.65 | 52.36 | 75.85     | **64.95** |
-| 32:16:16  | 64.07 | 51.15 | 74.65     | 63.29   |
-| 48:8:8    | 65.06 | 51.17 | 72.87     | 63.03   |
-
-**结论**：平衡分配（24:20:20）最佳，偏斜分配下降 1.6-1.8 分
-
-### 2. 长视频性能对比（Token 数量）
-
-| Context Length | Vanilla RoPE | Interleaved MRoPE | VideoRoPE |
-|----------------|--------------|-------------------|-----------|
-| 8K tokens      | 48.2%        | 67.8%             | 61.3%     |
-| 32K tokens     | 31.5%        | 63.1%             | 58.9%     |
-| 256K tokens    | 12.3%        | **58.4%**         | 52.7%     |
-
-### 3. Qwen3-VL 基准测试提升
-
-| Benchmarks | +Interleaved MRoPE |
-|------------|-------------------|
-| MVBench    | +1.2%             |
-| VideoMME   | +1.5%             |
-| MLVU       | +2.1%             |
-| Charades-STA | +1.8%           |
-
-### 4. Attention 可视化（第20层）
-
-| 方法 | Vision Token Attention |
-|------|------------------------|
-| 无 Spatial-Reset | 16.02% |
-| 有 Spatial-Reset  | **28.08%** |
-
-## 六、实现细节（PyTorch 核心代码）
-
-```python
-class InterleavedMRoPE:
-    def __init__(self, head_size, rotary_dim, base=10000):
-        self.d_h = head_size
-        self.m = rotary_dim // 6  # 每轴的旋转对数
-        
-        # 预计算频率
-        self.omega = self._compute_omega(base)
-    
-    def _compute_omega(self, base):
-        """计算每个轴的频率谱"""
-        omega_min = base ** (-(self.m - 1) / self.m)
-        omega_max = 1.0
-        
-        omega = {}
-        for alpha in ['t', 'h', 'w']:
-            omega[alpha] = torch.zeros(self.m)
-            for k in range(self.m):
-                ratio = k / (self.m - 1) if self.m > 1 else 0
-                omega[alpha][k] = omega_min * (omega_max / omega_min) ** ratio
-        return omega
-    
-    def rotate(self, q, k, positions):
-        """
-        输入:
-            q, k: [seq_len, num_heads * head_size]
-            positions: [3, seq_len] for (t, h, w) or [seq_len] for text
-        """
-        if positions.ndim == 1:
-            # 纯文本：使用 vanilla RoPE
-            return self._text_rope(q, k, positions)
-        
-        # 多模态：Interleaved MRoPE
-        seq_len = positions.shape[1]
-        t, h, w = positions[0], positions[1], positions[2]
-        
-        q = q.view(seq_len, -1, self.d_h)
-        k = k.view(seq_len, -1, self.d_h)
-        
-        # 分离旋转维度
-        q_rot = q[..., :self.m*3]
-        k_rot = k[..., :self.m*3]
-        q_pass = q[..., self.m*3:]
-        k_pass = k[..., self.m*3:]
-        
-        # 交错式旋转
-        for plane_i in range(self.m * 3 // 2):
-            axis = plane_i % 3  # 轴分配
-            k_idx = plane_i // 3  # 频率索引
-            
-            # 选择频率
-            if axis == 0:
-                freq = self.omega['t'][k_idx]
-                pos = t
-            elif axis == 1:
-                freq = self.omega['h'][k_idx]
-                pos = h
-            else:
-                freq = self.omega['w'][k_idx]
-                pos = w
-            
-            # 计算旋转角度
-            theta = pos * freq
-            cos = torch.cos(theta)
-            sin = torch.sin(theta)
-            
-            # 应用 2D 旋转
-            q_rot[:, :, 2*plane_i:2*plane_i+2] = self._apply_rotation(
-                q_rot[:, :, 2*plane_i:2*plane_i+2], cos, sin)
-            k_rot[:, :, 2*plane_i:2*plane_i+2] = self._apply_rotation(
-                k_rot[:, :, 2*plane_i:2*plane_i+2], cos, sin)
-        
-        # 合并
-        q = torch.cat([q_rot, q_pass], dim=-1).reshape(seq_len, -1)
-        k = torch.cat([k_rot, k_pass], dim=-1).reshape(seq_len, -1)
-        
-        return q, k
-    
-    def _apply_rotation(self, x, cos, sin):
-        """应用 2D 旋转矩阵"""
-        x0, x1 = x[..., 0], x[..., 1]
-        return torch.stack([
-            x0 * cos - x1 * sin,
-            x0 * sin + x1 * cos
-        ], dim=-1)
-```
-
-## 七、相关技术关联
-
-### 1. Multi-Head RoPE (MHRoPE)
-
-**关联**：另一种实现全频率利用的方法
-- **MHRoPE**：使用不同的 Attention Head 处理不同轴
-- **Interleaved MRoPE**：同一 Head 内交错处理
-
-### 2. Text-Timestamp Alignment
-
-**关联**：Qwen3-VL 另一项创新，用于视频时序建模
-- **T-RoPE**：时间轴旋转编码
-- **Text-Timestamp**：将文本 anchor 到视频时间戳
-- **组合**：Interleaved MRoPE 提供精确的时-空对齐
-
-### 3. DeepStack Fusion
-
-**关联**：Qwen3-VL 的特征融合策略
-```
-ViT 多层特征 → DeepStack → 
-                 ↓
-         Qwen3 LLM (配备 Interleaved MRoPE)
-```
-
-### 4. 相关论文方法对比
-
-| 方法 | 位置设计 | 频率分配 | 文本兼容 | 全频率 |
-|------|---------|---------|---------|--------|
-| Vanilla RoPE | ✗ | ✓ | ✓ | ✓ |
-| MRoPE | ✓ | ✗ | ✓ | ✗ |
-| **Interleaved-MRoPE** | ✓ | ✓ | ✓ | ✓ |
-
-## 八、实际应用场景
-
-### 1. 长视频理解 (>256K tokens)
-```
-问题: 传统方法在超长视频上性能崩溃
-解决: Interleaved MRoPE + Spatial-Reset
-      支持数小时视频的帧级精确定位
-```
-
-### 2. 多图像检索
-```
-场景: 在 1000 张图中找到特定物体
-优势: 每张图像独立编码，位置重置避免干扰
-      精确的空间定位能力
-```
-
-### 3. GUI 交互代理
-```
-场景: 点击屏幕特定坐标
-核心: (x, y) 坐标通过 Interleaved MRoPE 精确编码
-      支持 sub-pixel 级别的定位精度
-```
-
-## 九、最佳实践建议
-
-1. **平衡分配**：推荐 t:h:w = 24:20:20
-2. **高分辨率图像**：启用 Spatial-Reset
-3. **长视频推理**：stride δ=1（处理所有帧）
-4. **位置外推**：YaRN 缩放因子设为 RoPE 的 75%
-5. **并行化**：避免只分片单轴到设备
-
-## 参考资料
+## 八、参考链接汇总
 
 - Qwen3-VL GitHub: https://github.com/QwenLM/Qwen3-VL
-- vLLM MRoPE 实现: https://docs.vllm.ai/en/v0.11.0/api/vllm/model_executor/layers/rotary_embedding/mrope.html
-- Revisiting Multimodal Positional Encoding: https://arxiv.org/html/2510.23095v1
-- Interleaved-MRoPE 详解: https://www.emergentmind.com/topics/interleaved-mrope
+- HuggingFace Qwen: https://huggingface.co/Qwen
+- ModelScope: https://modelscope.cn/organization/qwen
+- Qwen3 Technical Report: https://arxiv.org/abs/2505.09388
+- Qwen2.5-VL: https://arxiv.org/abs/2502.13923
+- Qwen2-VL (MRoPE 原始): https://arxiv.org/abs/2409.12191
+- SigLIP-2: https://arxiv.org/abs/2502.14786
+- CoMP: https://arxiv.org/abs/2503.18931
+- DeepStack: https://arxiv.org/abs/2411.16535
+- TimeMarker: https://arxiv.org/abs/2411.18211
+- SAPO: https://arxiv.org/abs/2511.20347
+- Omni3D: https://arxiv.org/abs/2207.10660
+- ZeroBench: https://arxiv.org/abs/2502.09696
+- VisuLogic: https://arxiv.org/abs/2504.15279
+- V*: https://arxiv.org/abs/2312.14135
+- Charxiv: https://arxiv.org/abs/2406.18521
+- MMLongBench-Doc: https://arxiv.org/abs/2502.04503
 
-Interleaved MRoPE 是 Qwen3-VL 实现卓越多模态推理能力的关键技术创新之一，通过精巧的交错式频率分配，实现了时-空信息的平衡融合，为长上下文、细粒度、跨模态推理奠定了坚实基础。
+整体来看，Qwen3-VL 是一个 engineering-heavy 的工作，三个架构创新（Interleaved MRoPE、DeepStack、Text timestamp）都有清晰的理论 motivation 和 ablation 验证。最让我印象深刻的是 **multimodal training 不仅没退化 text，反而 enhance 了 reasoning**——这说明 text 和 vision 之间确实存在 synergy，square-root reweighting + necessity filtering 这两个"看似简单"的 data/loss 设计起了关键作用。
