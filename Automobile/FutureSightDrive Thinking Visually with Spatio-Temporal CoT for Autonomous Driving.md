@@ -9,36 +9,8 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# FSDrive 人话版 - 司机脑子里到底在想什么
-
-## 核心一句话
-
-你开车的时候，脑子里蹦出来的绝对不是文字 "前方 5 米处有一辆红色 Toyota"，你脑子里直接 **"看到"** 了 3 秒后那辆车会切到你这条道上来。FSDrive 就是让 AI 也这么干。
-
----
-
-## 为什么之前的 VLA 路子走歪了
-
-看看现在主流做法 (EMMA, OmniDrive, DriveVLM, Doe-1) 的 pipeline:
-
-```
-6 张相机图 → ViT encode → LLM → 先吐一段文字描述场景
-                                   ↓
-                              再基于文字规划 trajectory
-```
-
-问题在哪? 你把一张 1280×352 的 RGB 图 (~10^6 bit 信息) 压成一句 "前方 30 米有车，速度大约 15 m/s" (~100 bit)。压缩比 10000:1。你告诉模型"有车"，但模型不知道这车 **到底在哪个车道、朝哪个方向偏、会不会变道**。
-
-这就好比让你闭着眼睛开车，旁边副驾用语言给你播报路况 - 信息 bottleneck 太窄，critical spatio-temporal cues 全丢了。
-
-FSDrive 的 insight 极其简单粗暴: **别压成文字了，直接让模型画一张未来的图出来当 CoT**。图本身就是最 rich 的 representation，lane 在哪、车在哪、怎么动，一目了然。
-
----
-
-## 完整 pipeline 用白话讲一遍
-
-### Step 1: 先激活 MLLM 的"画画"能力
+直接让模型画一张未来的图出来当 CoT
+图本身就是最 rich 的 representation，lane 在哪、车在哪、怎么动，一目了然。
 
 Qwen2-VL 本来只会看图说话 (understanding)，不会画图 (generation)。怎么让它画?
 

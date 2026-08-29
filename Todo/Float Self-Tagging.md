@@ -8,20 +8,8 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+float 这玩意儿在 dynamic language 里天生难搞，因为 IEEE754 把 64 bit 全占满了，没地方塞 type 信息。这帮人想了个绝招：把 float 的 bit 旋转一下，让某些 float 自己"碰巧"在 low bit 上长出正确的 type tag，就不用 heap allocate 了。
 
-# 用人话讲 Float Self-Tagging
-
-好，我把前面那堆技术细节翻译成人话。
-
----
-
-## 一句话概括
-
-**float 这玩意儿在 dynamic language 里天生难搞，因为 IEEE754 把 64 bit 全占满了，没地方塞 type 信息。这帮人想了个绝招：把 float 的 bit 旋转一下，让某些 float 自己"碰巧"在 low bit 上长出正确的 type tag，就不用 heap allocate 了。**
-
----
-
-## 问题是什么？
 
 想象你在管理一个仓库。每个货物要贴个 label 标明类型——"这是 int"、"这是 string"、"这是 float"。
 

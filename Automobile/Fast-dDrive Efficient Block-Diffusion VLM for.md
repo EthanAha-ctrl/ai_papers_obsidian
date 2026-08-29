@@ -9,17 +9,7 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-用最直白的大白话来拆解这篇 paper，核心就是讲了一件事：**怎么让又大又慢的 Vision-Language-Action (VLA) 模型，在车上的芯片里跑得飞快，同时还不丢精度，甚至逻辑更严密。**
-
-为了 build your intuition，我们把这篇 paper 想象成在改造一条“自动驾驶流水线”。
-
-### 1. 为什么要改造？旧流水线有什么毛病？
-
-现在的 E2E autonomous driving VLA 主要是 Autoregressive (AR) 模式，就像挤牙膏，一次吐一个 token。
-- **毛病 1：慢得要命 (Memory-bandwidth bound)**。在 batch size 为 1 的车机上，你为了算 1 个 token，得把整个 3B 参数的 model weights 从内存搬一遍。算 400 个 token 就得搬 400 遍，算力都在等内存搬运，所以 TPS 只有可怜的 50 左右。
-- **毛病 2：一步错，步步错 (Exposure bias)**。轨迹是按时间顺序生成的，如果第 1 秒的坐标算歪了一点点，第 2 到 5 秒的坐标基于这个错误继续算，最后车子可能就冲出路面了。
-
-为了解决这两个毛病，有人提出了 Full-sequence Diffusion (比如 dVLM-AD)。这就像做填空题，一次性把所有答案都蒙上，然后反复修改打磨。
+Full-sequence Diffusion (比如 dVLM-AD)。这就像做填空题，一次性把所有答案都蒙上，然后反复修改打磨。
 - **优点**：全局视野，轨迹首尾呼应，不会出现前面错后面崩的情况。
 - **毛病 1：慢上加慢 (No KV-cache reuse)**。因为每个 token 都在看所有其他 token，你每修改一次，整个 sequence 的 attention 就得全算一遍，完全没法用 KV cache 偷懒。
 - **毛病 2：逻辑穿越 (Logical leakage)**。驾驶逻辑必须是“先看到行人，再决定刹车”。但全序列 diffusion 里，未来的“刹车轨迹”居然能反过来影响“看到行人”这个感知结果。模型为了合理化自己的错误轨迹，甚至会篡改前面的感知输出，这在 safety 上绝对不能接受。

@@ -8,35 +8,21 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+photo-realistic 的 closed-loop simulator
+把 static background (路、树、楼) 和 dynamic agent (路上的车) 拆开处理。
+背景用 3DGS 死死锁住 metric geometry, 保证绝对的真实和空间一致; 车用 diffusion model 随便生成, 保证无限的多样性, 然后把车“贴”到 3D 背景上。通过这种解耦, 既拿到了 reconstruction 的几何刚性, 又拿到了 generation 的 scalability。
 
-Andrej, 咱们把学术黑话扒掉, 直接讲这个系统骨子里在干嘛。我会保留核心的技术骨架和公式变量, 但用白话把 intuition 给你 build 起来。
+3DGS 弱点: **怕 sparse views**。
+MIRROR 的解法让量产车带着 7 个 RGB camera, 在 6 个城市的 200 米半径 ROI (Region of Interest) 内反复跑。白天跑、晚上跑、下雨跑。
+只要轨迹在这个 ROI 里待超过 10 秒, 位移超 20 米, 就自动触发录制。
+把死角补齐, 把正反两面都学全。
 
----
-
-## 1. 一句话总结这篇 Paper 的核心 Vibe
-
-这篇 paper 想给自动驾驶做个 photo-realistic 的 closed-loop simulator。以前大家做仿真, 要么用 CARLA 这种纯 3D 引擎, 太假, 有 sim-to-real gap; 要么用 3DGS 重建真实场景, 够真, 但加一辆新车得重新扫一遍建模, 太贵; 要么用 video diffusion 直接生成, 啥都能编, 但几何全是飘的, 连个准确的 6-DoF camera pose 都对不齐。
-
-HybridWorldSim 的套路很粗暴: **把 static background (路、树、楼) 和 dynamic agent (路上的车) 拆开处理。** 背景用 3DGS 死死锁住 metric geometry, 保证绝对的真实和空间一致; 车用 diffusion model 随便生成, 保证无限的多样性, 然后把车“贴”到 3D 背景上。通过这种解耦, 既拿到了 reconstruction 的几何刚性, 又拿到了 generation 的 scalability。
-
----
-
-## 2. 为什么要造 MIRROR 这个 Dataset?
-
-3DGS 有个致命弱点: **怕 sparse views**。自动驾驶采集的车队数据, 往往一条路只走一次。如果你在仿真里让 ego car 稍微偏离一点原轨迹, 或者往旁边变个道, 3DGS 就会因为没见过这个视角而渲染出满天飞的 “floaters” (飘在空中的高斯斑点)。
-
-MIRROR 的解法就是 **multi-traversal (多次穿越)**。他们让量产车带着 7 个 RGB camera, 在 6 个城市的 200 米半径 ROI (Region of Interest) 内反复跑。白天跑、晚上跑、下雨也跑。只要轨迹在这个 ROI 里待超过 10 秒, 位移超 20 米, 就自动触发录制。
-
-直觉上, 这等于是给 3D 重建模型喂了同一块地方的 100 张不同角度、不同光照的照片。模型就能把死角补齐, 把正反两面都学全。
-
----
-
-## 3. Static Scene (静态背景) 怎么建的? —— Hybrid Gaussian 设计
-
-原作者发现, 用 vanilla 3DGS (原始 3D Gaussian Splatting) 搞自动驾驶场景会出三个 bug: 天空飘忽不定、地面纹理闪烁、背景受光照变化影响严重。于是他们把场景切成了三种 node, 分别用不同的高斯策略:
+用 vanilla 3DGS 三个 bug: 天空飘忽不定、地面纹理闪烁、背景受光照变化影响严重。
+把场景切成了三种 node, 分别用不同的高斯策略:
 
 ### 3.1 Sky 和 Ground: Code-Gaussians
-天空和地面的特点是: **几何极其简单, 但颜色随天气剧变。** 如果用传统的 SH (Spherical Harmonics, 球谐函数) 去拟合颜色, SH 的 basis 是固定的, 训练完就锁死了, 没法表达“白天变黑夜”。
+天空和地面几何极其简单但颜色随天气剧变。
+如果用传统的 SH (Spherical Harmonics, 球谐函数) 去拟合颜色, SH 的 basis 是固定的, 训练完就锁死了, 没法表达“白天变黑夜”。
 
 他们引入了 **Appearance Latent** (外观潜变量) $\mathbf{z}_j$:
 $$\mathbf{c}(\mathbf{d}) = \text{MLP}(\mathbf{d} \mid \mathbf{z}_j, \mathbf{f})$$
@@ -74,9 +60,10 @@ $$\mathcal{C}(\mathbf{N}) = \sum_{c=1}^C \left[ (\nabla_x \mathbf{N}_c)^2 + (\na
 
 ---
 
-## 4. Dynamic Scene (动态车辆) 怎么搞? —— Diffusion 来补位
+## 4. Dynamic Scene —— Diffusion 来补位
 
-这里是最有意思的地方。如果用 3DGS 重建动态车, 加一辆新卡车得给卡车扫一圈建个 3D 资产, 太费劲。他们直接用 2D diffusion model 来“画”车, 但通过一套极为精巧的 condition 把它钉死在 3D 几何里。
+3DGS 加一辆新卡车得给卡车扫一圈建个 3D 资产。
+他们直接用 2D diffusion model 来“画”车, 但通过一套极为精巧的 condition 把它钉死在 3D 几何里。
 
 ### 4.1 Consistency Condition (一致性条件构建)
 假设你有一张原图 $I_{src}$, 上面有辆车的 3D bbox。你想看从另一个视角 $v_{tgt}$ 看过去的景象。

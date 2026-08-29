@@ -1,14 +1,9 @@
-# OSM Vector Tiles Blog 深度解析
 
-这篇博客由 **Mark Litwintschik** 撰写，主题是 **OpenStreetMap (OSM) 新推出的 vector tiles（矢量瓦片）** 的可视化与分析。核心叙事线是：OSM 从传统的 raster tiles（栅格瓦片）升级到 Mapbox Vector Tiles (MVT) 格式的矢量瓦片，作者一步步演示如何下载、解码、查询、转换这些数据。下面我从第一性原理出发，逐层拆解。
+OSM 新推出的 vector tiles 的可视化与分析
+OSM 从传统的 raster tiles 升级到 Mapbox Vector Tiles (MVT) 格式的矢量瓦片
 
----
-
-## 1. Raster Tiles vs. Vector Tiles：从第一性原理理解
-
-### 1.1 Raster Tiles 的本质
-
-传统 raster tile 本质上就是**预渲染的 PNG 图片**。每个 zoom level $z$ 下，世界地图被切割成 $2^z \times 2^z$ 个瓦片网格。每个瓦片是一个 256×256 像素（或 512×512）的**光栅图像**：
+传统 raster tile 本质上就是预渲染的 PNG 图片。
+每个 zoom level $z$ 下，世界地图被切割成 $2^z \times 2^z$ 个瓦片网格。每个瓦片是一个 256×256 像素（或 512×512）的**光栅图像**：
 
 $$\text{Total Tiles}(z) = 4^z$$
 
@@ -27,7 +22,7 @@ $$\text{Total Tiles}(z) = 4^z$$
 
 ### 1.2 Vector Tiles 的本质
 
-MVT 格式的矢量瓦片是一种**Protocol Buffers 编码的二进制格式**（[Mapbox Vector Tile Specification v2.1](https://github.com/mapbox/vector-tile-spec/tree/master/2.1)）。核心思想是：
+MVT 格式的矢量瓦片是一种Protocol Buffers 编码的二进制格式：
 
 > **不在服务端渲染像素，而是传输几何与属性数据，让客户端决定如何渲染。**
 

@@ -8,18 +8,9 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
+你在VR里对着场景说"把这把椅子变成chrome金属风"，AI要花10分钟才能出3D结果
 
-# Dreamcrafter人话版
-
-## 一、这篇paper一句话总结
-
-你在VR里对着场景说"把这把椅子变成chrome金属风"，AI要花10分钟才能出3D结果。这篇paper的trick是：**AI pipeline底下本来就先要跑一个2D image editing step，那我把这个2D step的结果在10秒内先塞给你当preview**，你确认方向对了再让后台慢慢跑3D。就这么个idea，BUT背后延伸出一整套VR scene editing系统。
-
-项目page: https://dream-crafter.github.io/
-
----
-
-## 二、为什么这事是个真问题
+这篇paper的trick是：**AI pipeline底下本来就先要跑一个2D image editing step，那我把这个2D step的结果在10秒内先塞给你当preview**，你确认方向对了再让后台慢慢跑3D。就这么个idea，BUT背后延伸出一整套VR scene editing系统。
 
 ### 2.1 3D content creation的两条路一直没merge
 

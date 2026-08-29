@@ -7,26 +7,14 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# Alpamayo-R1 深度讲解：从 Reasoning 到 Action Prediction 的 VLA 架构
-
-## 1. 论文定位与核心命题
-
-这篇 NVIDIA 的工作本质上回答一个问题：**如何在 VLA (Vision-Language-Action) 模型中让 reasoning 真正"驱动" action，而不是装饰品？**
+如何在 VLA 模型中让 reasoning 真正"驱动" action
 
 传统 E2E driving 有两类极端：
-- **Trajectory-only baseline**：直接 pixels → trajectory，黑盒，长尾场景脆
-- **Free-form reasoning VLA**：让 LLM/VLM 生成自然语言 reasoning，但 reasoning 和 action 之间 causal 链条断裂（论文 Fig. 2 展示了 vague description、superficial reasoning、causal confusion 三类常见病）
+- Trajectory-only baseline
+- Free-form reasoning VLA：让 LLM/VLM 生成自然语言 reasoning，但 reasoning 和 action 之间 causal 链条断裂
 
-Alpamayo-R1 (AR1) 想要的是 **decision-grounded, causally linked reasoning**——每一条 reasoning trace 必须对应一个 closed-set driving decision，且 causal factors 只能来自 observed history window，不能"偷看"未来。这是一个很强的 inductive bias。
-
-论文链接：
-- HuggingFace 模型：https://huggingface.co/nvidia/Alpamayo-R1-10B
-- 代码：https://github.com/NVlabs/alpamayo
-- Cosmos-Reason：https://arxiv.org/abs/2503.15558
-- AlpaSim：https://github.com/NVlabs/alpasim
-
-## 2. 架构整体解剖
+Alpamayo-R1 是 decision-grounded, causally linked reasoning.
+每一条 reasoning trace 必须对应一个 closed-set driving decision，且 causal factors 只能来自 observed history window，不能"偷看"未来。这是一个很强的 inductive bias。
 
 整体是一个 **modular VLA**，不是 monolithic black box。关键设计哲学是：VLM backbone 可以替换（从 0.5B 到 7B 到最终 10B），但 vision encoder 和 action decoder 是 domain-specific 组件。
 

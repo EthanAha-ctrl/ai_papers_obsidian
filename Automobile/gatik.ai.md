@@ -1,34 +1,27 @@
-## 1. 公司概览 (Company Overview)
+成立于 2017 年，总部Mountain View
+团队来自 Waymo、Uber ATG、Apple
+专注于 middle-mile logistics（中间里程物流），连接 regional distribution centers 与 local retail stores 的短途、高频次货运场景。
 
-**Gatik** 成立于 **2017 年**，总部位于美国 **Mountain View, CA**，并在加拿大多伦多设有办公室。公司创始团队来自 **Google Waymo、Uber ATG、Apple** 等自动驾驶行业的资深专家。Gatik 专注于 **middle-mile logistics**（中间里程物流），即连接 **regional distribution centers**（区域配送中心）与 **local retail stores**（本地门店）的短途、高频次货运场景。
+- 核心产品：Gatik Driver — 一个 safe, scalable & interpretable AI driver，专为处理真实世界复杂性设计（如高速公路汇入、密集城市交通、dock-to-dock 操作）。
+- 融资情况：累计融资约 $152M（Series B $85M 等），投资方包括 Innovation Endeavors、Intact Ventures、Nippon Express。
+- 商业进展：已与 Kroger、Walmart、Loblaw 等大型零售商建立合作，实现 commercial revenue；实现 $600M 的 contracted revenue。
 
-- **核心产品**：**Gatik Driver™** — 一个 **safe, scalable & interpretable AI driver**，专为处理真实世界复杂性设计（如高速公路汇入、密集城市交通、dock-to-dock 操作）。
-- **融资情况**：累计融资约 **$152M**（Series B $85M 等），投资方包括 **Innovation Endeavors、Intact Ventures、Nippon Express** 等。
-- **商业进展**：已与 **Kroger、Walmart、Loblaw** 等大型零售商建立合作，实现 **commercial revenue**；据称已实现超过 **$600M** 的 contracted revenue。
-- **荣誉**：2025 年被 **TIME** 评为 **Best Inventions** 之一。
-
----
-
-## 2. 技术架构详解 (Technical Architecture Deep Dive)
-
-### 2.1 整体架构 (System Architecture)
-
-Gatik Driver™ 采用 **sensor fusion** 架构，整合 **LiDAR、camera、radar** 多模态传感器，结合 **proprietary AI perception & planning algorithms** 与 **redundant safety-critical systems**。以下是其核心组件的分析：
+sensor fusion 架构，整合 LiDAR、camera、radar 多模态传感器，结合 proprietary AI perception & planning algorithms 与 redundant safety-critical systems
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Gatik Autonomous Stack                  │
-├─────────────────────────────────────────────────────────────┤
-│  Perception Layer │ Prediction Layer │ Planning Layer │ Control │
-├─────────────────────────────────────────────────────────────┤
-│  Sensor Fusion   │  Multi-Agent    │  Behavior      │  Actuator│
-│  (LiDAR+Camera+  │  Modeling      │  Planning      │  Command │
-│   Radar)         │                │                │          │
-├─────────────────────────────────────────────────────────────┤
-│  Redundant Safety Systems (Fail-Operational Design)        │
-│  • Independent Braking/Steering                          │
-│  • Real-time Health Monitoring                           │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     Gatik Autonomous Stack                       │
+├──────────────────────────────────────────────────────────────────┤
+│  Perception Layer │ Prediction Layer │ Planning Layer │ Control  │
+├──────────────────────────────────────────────────────────────────┤
+│  Sensor Fusion   │  Multi-Agent   │  Behavior      │  Actuator   │
+│  (LiDAR+Camera+  │  Modeling      │  Planning      │  Command    │
+│   Radar)         │                │                │             │
+├──────────────────────────────────────────────────────────────────┤
+│  Redundant Safety Systems (Fail-Operational Design)              │
+│  • Independent Braking/Steering                                  │
+│  • Real-time Health Monitoring                                   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 感知层 (Perception Layer)

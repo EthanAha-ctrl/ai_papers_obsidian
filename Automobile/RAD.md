@@ -8,35 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲 RAD
-
-## 一句话总结
-
-**让自动驾驶 policy 在一个"以假乱真的虚拟世界"里自己开车、自己撞、自己学，撞了就知道疼——但还得时不时对照老司机的开法，别学野了。**
-
----
-
-## 1. 为什么之前的 IL 方法不行
-
-想象一个驾校学员，学习方法是"看老师开车看了一万小时"。
-
-问题在哪？
-
-**问题一：他学的是"动作"，不是"道理"。**
-
-老师看到红灯就踩刹车，学员也学会了"看到这个画面就踩刹车"。但他不知道**为什么**——可能是因为前面有行人，可能是因为红灯，可能只是老师想靠边停车。他只记住了"画面 A → 动作 B"的 correlation，没理解 causation。
-
-这就是 paper 里说的 **causal confusion** 和 **shortcut learning**。很多 IL policy 根本不看路，只看自己的历史轨迹做 extrapolation——因为它发现"历史轨迹"这个 signal 就能预测下一步，何必去看红绿灯？参考 [Is Ego Status All You Need](https://openaccess.thecvf.com/content/CVPR2024/papers/Li_Is_Ego_Status_All_You_Need_for_Open-Loop_End-to-End_Autonomous_CVPR_2024_paper.pdf)。
-
-**问题二：训练和考试不一样。**
-
-训练时每一步都是老师开到的好位置，学员只需要"在好位置上预测下一步"。
-考试时没人帮忙，学员第一步偏了 10cm，第二步就在偏的位置上预测，又偏一点，第三步更偏……雪球越滚越大，最后开到沟里。
-
-这就是 **open-loop gap**——open-loop training，closed-loop deployment，distribution shift 导致 compounding error。
-
----
+open-loop gap——open-loop training，closed-loop deployment，distribution shift 导致 compounding error。
 
 ## 2. RAD 的解法：让 policy 自己开、自己撞
 

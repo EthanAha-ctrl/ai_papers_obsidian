@@ -8,26 +8,18 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
+将 reasoning 和 action generation 统一在一个 autoregressive Transformer 框架内
+现有 VLA两个limitations：
 
-# AutoVLA: Vision-Language-Action Model for End-to-End Autonomous Driving
-
-## 1. Paper 整体定位与 Motivation
-
-AutoVLA 由 UCLA 团队 (Zewei Zhou, Tianhui Cai, Zhiyu Huang, Bolei Zhou, Jiaqi Ma 等) 提出，核心目标是**将 reasoning 和 action generation 统一在一个 autoregressive Transformer 框架内**，实现 end-to-end autonomous driving。
-
-Paper 指出现有 VLA-based autonomous driving 存在两个 critical limitations：
-
-**Limitation 1: Physically-infeasible or complex action generation**
-- 一些方法 [35-37] 直接用 VLM 生成 textual waypoints，但这些 outputs 物理上可能不可行，且会 suffer from mode collapse
+**1: Physically-infeasible or complex action generation**
+- 用 VLM 生成 textual waypoints，但这些 outputs 物理上可能不可行，且会 suffer from mode collapse
 - 另一些方法 [38-43] 引入 intermediate meta-actions 或 latent action tokens，再用 downstream planner 解码 trajectory，但这破坏了 end-to-end optimization 或增加 model complexity
 
 **Limitation 2: Inflexible reasoning across diverse scenarios**
-- 多数 model [44, 45] 使用 fixed reasoning strategy，无法根据场景复杂度自适应切换
+- 使用 fixed reasoning strategy，无法根据场景复杂度自适应切换
 - DriveVLM [46] 虽引入 dual-process paradigm，但依赖 separate modules (VLM + conventional E2E model)，架构复杂
 
-AutoVLA 的核心 insight：**将 physical action tokens 直接 integrate 到 pretrained VLM 的 vocabulary 中**，让 language model 通过 next-token prediction 直接学习 planning policy，同时通过 SFT + RFT 实现 adaptive fast/slow thinking。
-
-项目主页: https://autovla.github.io/
+AutoVLA：将 physical action tokens 直接 integrate 到 pretrained VLM 的 vocabulary 中，让 language model 通过 next-token prediction 直接学习 planning policy，同时通过 SFT + RFT 实现 adaptive fast/slow thinking。
 
 ---
 

@@ -1,59 +1,13 @@
+自主探索与理解 GitHub Repository 的 AI Agent Framework
 
+open-source AI agent framework
+自主地发现、理解并利用 GitHub 上的 code repository 来解决复杂的现实世界任务
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-好的，我已经收集了足够的信息。让我为你全面深入地解析这个 project。
-
----
-
-# RepoMaster: 一个自主探索与理解 GitHub Repository 的 AI Agent Framework
-
-## 📌 Project 概览
-
-**RepoMaster** 是由 **QuantaAlpha** 团队开发的一个 open-source AI agent framework，其核心目标是：**自主地发现、理解并利用 GitHub 上的 code repository 来解决复杂的现实世界任务**。
-
-> 论文标题：*RepoMaster: Autonomous Exploration and Understanding of GitHub Repositories for Complex Task Solving*
-> - 论文链接：https://arxiv.org/abs/2505.21577
-> - GitHub: https://github.com/QuantaAlpha/RepoMaster
-> - 已被 **NeurIPS 2025** 接收 (https://neurips.cc/virtual/2025/poster/117270)
-
----
-
-## 🧠 第一性原理：为什么需要 RepoMaster？
-
-### 问题的本质
-
-想象一下你是一个 developer，你想做一件事：**"修复一张老照片上的划痕"**。GitHub 上有数百万个 repository，其中肯定有合适的 image restoration 工具。但是：
-
-1. **你怎么找到正确的 repo？** → **Repository Search** 问题
-2. **找到后，你怎么理解这个 repo 的代码结构？** → **Repository Understanding** 问题（README 往往不够用）
-3. **理解后，你怎么正确调用它？** → **Repository Execution** 问题（dependency 安装、参数配置、API 调用等）
-
+你想做一件事：修复一张老照片上的划痕. GitHub 上有数百万个 repository，其中肯定有合适的.
 传统的 code agent（如 SWE-Agent、OpenHands）主要聚焦于 **修改已知 repo 中的代码**（例如修 bug），而不是 **在海量 GitHub repo 中搜索、理解并复用**。这就是 RepoMaster 要解决的核心差距。
 
-### 两个核心障碍（从第一性原理推导）
-
-当 agent 试图深入探索一个 repo 时，会遇到：
-
-- **Overwhelming Information（信息过载）**：一个大型 repo 可能有数千个文件、数万行代码。LLM 的 context window 有限，不可能把所有代码都塞进去。
-- **Tangled Dependencies（纠缠的依赖）**：函数之间相互调用，模块之间相互依赖，形成复杂的 dependency graph。不理解这些关系就无法正确使用 repo。
-
----
-
-## 🏗️ Architecture：三阶段 Pipeline
+-Overwhelming Information（信息过载）
+-Tangled Dependencies（纠缠的依赖）
 
 RepoMaster 的整体架构由 **三个核心阶段** 组成：
 

@@ -10,17 +10,8 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# DGGT 人话版：用最直白的方式讲清楚这篇 paper
 
-## 0. 一句话概括
-
-DGGT 就是**给你几张没标过 camera pose 的开车视频帧，0.4 秒内吐出整个 4D 场景（3D Gaussian + 物体运动 + camera pose），还能让你随便编辑场景里的车和人**。
-
-就这么简单。剩下全是细节。
-
-- Project page: https://github.com/xiaomi-research/dggt
-
----
+给你几张没标过 camera pose 的开车视频帧，0.4 秒内吐出整个 4D 场景（3D Gaussian + 物体运动 + camera pose），还能让你随便编辑场景里的车和人
 
 ## 1. 这个问题为啥难：先讲 pain point
 

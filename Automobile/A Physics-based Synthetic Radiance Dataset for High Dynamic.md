@@ -7,16 +7,9 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# ISETHDR: Physics-based Synthetic Radiance Dataset for HDR Driving Scenes 深度解读
-
-Karpathy 你好，这篇 paper 由 Stanford 的 Zhenyi Liu、Brian Wandell 与 Ford 的 Devesh Shah 合作，是 ISET (Image Systems Evaluation Toolbox) 系列工作在 HDR 自动驾驶场景的延伸。它本质上是把 "scene spectral radiance → optics → sensor → digital value" 这条完整 imaging pipeline 数字孪生化，并用一个 **light-group 分解** 的渲染技巧解决了 "渲染一次只能得到一种光照条件" 的性能瓶颈。下面我把技术细节尽量讲透，帮助你 build intuition。
-
----
-
-## 1. 问题动机：为什么夜间驾驶对 camera 这么难
-
-paper 一上来提出三个耦合在一起的问题，每一个都对应成像 pipeline 的一个不同 stage：
+ISETHDR
+Zhenyi Liu 与 Ford 的 Devesh Shah 合作.
+并用一个 **light-group 分解** 的渲染技巧解决了 "渲染一次只能得到一种光照条件" 的性能瓶颈。下面我把技术细节尽量讲透，帮助你 build intuition。
 
 **A. Dynamic range 的硬限制**
 夜间驾驶中，headlamp / streetlight / traffic light 的 radiance 比邻近暗区高 **5 个数量级**。普通 CMOS image sensor (CIS) 在 single-shot 下 well capacity 受限，无法在一次曝光内同时编码这两种 region。

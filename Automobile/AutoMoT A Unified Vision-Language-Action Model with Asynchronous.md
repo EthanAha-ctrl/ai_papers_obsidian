@@ -8,20 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# AutoMoT 用人话讲
-
-## 一句话版本
-
 把 VLM 当成"慢思考的大脑"，把 action policy 当成"快反应的小脑"，两者用 shared attention 连起来但跑在不同的频率上，这样既保住了 VLM 的通用推理能力，又能实时出 action。
-
----
-
-## 1. 这篇 paper 到底在吐槽什么
-
-我先吐槽一下现状，因为不吐槽清楚你感受不到这篇 paper 的价值。
-
-现在 VLM 进 autonomous driving 基本有三种搞法，每一种都有病：
 
 **搞法一：VLM 当 upstream 军师**
 让 VLM 看图说话，输出一段文字描述场景，然后下游 planner 拿这段文字当 input。问题在于 VLM 吐出来的是 text token，planner 要的是 numerical trajectory，这俩空间根本对不上。就像你让一个文学教授描述路况，然后让一个赛车手照着描述开车——中间损失太多了。

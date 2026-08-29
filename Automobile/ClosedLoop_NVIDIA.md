@@ -8,16 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 人话版：GTR²S到底干了什么
-
-Andrej, 我把上一篇技术拆解翻译成"白板讲解"的版本。还是要带公式和数据,因为intuition不能靠口号build,得靠具体数字anchor。
-
----
-
-## 一、故事起点：开车模型现在怎么玩
-
-Autonomous driving end-to-end planning现在主流分两派:
+GTR²S
 
 **派别A (Continuous Regression)**: 神经网络直接输出一条轨迹 $a = (x_1, y_1, \theta_1, x_2, y_2, \theta_2, \dots, x_T, y_T, \theta_T)$,每个waypoint都回归。代表:UniAD, VAD。
 - 优点:简单直接。
