@@ -1,21 +1,7 @@
-# Temporal Transformer 深度解析
 
-## 一、核心概念与直觉理解
+Temporal Transformer** 的本质是：将时间序列建模为序列到序列的映射问题，利用 Self-Attention 机制捕捉时间维度上的 Long-range dependencies。
 
-### 1.1 从第一性原理出发
-
-**Temporal Transformer** 的本质是：**将时间序列建模为序列到序列的映射问题**，利用 Self-Attention 机制捕捉时间维度上的 Long-range dependencies。
-
-传统方法的核心困境：
-- **RNN/LSTM**：Sequential processing 导致无法并行化，且存在 vanishing/exploding gradient 问题
-- **CNN**：Local receptive field 限制了 long-range dependencies 的建模能力
-
-Temporal Transformer 的突破性在于：
-$$\text{Temporal Dependency} = \text{Self-Attention}(\mathbf{X}_t, \mathbf{X}_{t-\Delta t}, \ldots, \mathbf{X}_{t-n\Delta t})$$
-
-### 1.2 关键直觉
-
-将时间序列视为 **ordered token sequence**，每个时间步作为一个 token，通过 Positional Encoding 注入时序信息：
+将时间序列视为 ordered token sequence，每个时间步作为一个 token，通过 Positional Encoding 注入时序信息：
 
 $$\mathbf{Z}^{(0)} = \mathbf{X} + \mathbf{P}$$
 

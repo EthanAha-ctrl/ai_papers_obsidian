@@ -8,22 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# Intern-S1-Pro 人话版
-
-Andrej, 我换个讲法 — 扔掉学术腔, 像在 coffee shop 白板上画给你看。
-
----
-
-## 一句话概括
-
-这群人把模型 scale 到 1T 参数, 发现了一件反直觉的事: **大而全的模型, 用同样的数据训练, 在专业任务上能干翻专门的小模型**。这就好比一个什么都学的通才, 在脑外科手术上居然赢了专科医生。
-
-听起来离谱, 但他们用 Biology-Instruction 这个 benchmark 给了铁证: 同样数据, specialist model 在 Protein-Fluorescence 上只有 2.57 分, 1T 的 generalist 拿了 78.14 分。**30 倍差距, 同一份训练数据**。
-
----
-
-## 为什么这事能成立?
+把模型 scale 到 1T 参数. 大而全的模型, 用同样的数据训练, 在专业任务上能干翻专门的小模型. 通才在脑外科手术上赢了专科医生。
 
 先 build 一下 intuition。你想啊, 科学领域这么多 — chemistry 有 SMILES notation, biology 有 protein sequence, materials 有 crystallographic coordinates, earth science 有 remote sensing imagery, 每个领域有自己的 "方言"。NLLB 那篇 paper 早测过: 从 bilingual 翻译扩展到 100 语言对, model size 要放大 90 倍。科学领域也一样, 容量不够, router 就混乱; 容量够了, specialist skill 就被通用 reasoning "点亮"。
 

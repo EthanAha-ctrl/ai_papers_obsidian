@@ -7,28 +7,16 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
+AG1 是一个 neuro-symbolic 系统：
+LM 负责猜 auxiliary constructions，symbolic engine DDAR 负责 deduction closure。
 
-# AlphaGeometry2 深度讲解
-
- Andrej，这篇 DeepMind 的 AG2 paper 信息密度极高，我尽量把每条技术线都展开到公式、架构、实验数据级别，并夹带一些我的 intuition 和相关联想。
-
----
-
-## 1. 宏观定位：为什么需要 AG2
-
-AG1 (Trinh et al., 2024, Nature) 是一个 neuro-symbolic 系统：LM 负责猜 auxiliary constructions，symbolic engine DDAR 负责 deduction closure。AG1 在 IMO-AG-30 上做到 25/30，但扩展到 2000–2024 全部 IMO geometry（IMO-AG-50）只有 **27/50 (54%)**。瓶颈集中在三处：
+AG1 在 IMO-AG-30 上做到 25/30，但扩展到 2000–2024 全部 IMO geometry（IMO-AG-50）只有 **27/50 (54%)**。瓶颈集中在三处：
 
 1. **Domain language 太窄**：只有 9 个 predicates，无法表达 "Find x"、linear equations of angles/distances、locus problems、non-constructive problems。
 2. **Symbolic engine 太慢**：Python + polynomial-complexity rule matching，最坏 O(N⁸) for similar triangle search，限制了 synthetic data 规模和 inference-time search 深度。
 3. **LM 太弱 + 搜索太单调**：AG1 用单一 beam search，模型是 custom transformer。
 
-AG2 把这三条线分别升级，最终在 IMO-AG-50 上做到 **42/50 (84%)**，超过 average gold medalist 的 40.9/50。这是 neuro-symbolic 第一次在 IMO geometry 上"defeat"金牌选手。
-
-相关链接：
-- AG1 Nature paper: https://www.nature.com/articles/s41586-023-06747-5
-- AG2 code: https://github.com/google-deepmind/alphageometry2
-- DeepMind IMO silver blog: https://dpmd.ai/imo-silver
-- IMO 2024 P4 solution: https://storage.googleapis.com/deepmind-media/DeepMind.com/Blog/imo-2024-solutions/P4/index.html
+AG2 是 neuro-symbolic 第一次在 IMO geometry 上"defeat"金牌选手。
 
 ---
 
@@ -203,14 +191,14 @@ def prune_points(points, check_provable):
 ### 5.2 架构图解析（Figure 4）
 
 ```
-   ┌─────────────────────────────────────┐
+   ┌──────────────────────────────────────┐
    │       Shared Facts Database          │
    └────┬───────┬───────┬───────┬─────────┘
         │       │       │       │
    ┌────▼──┐ ┌──▼──┐ ┌──▼──┐ ┌──▼──┐
    │Tree 1 │ │Tree2│ │Tree3│ │Tree4│  ... different configs
    │Classic│ │Multi│ │Uni  │ │Deep │
-   └───────┘ └────┘ └────┘ └────┘
+   └───────┘ └─────┘ └─────┘ └─────┘
         │       │       │       │
         └───────┴───────┴───────┘
                  │

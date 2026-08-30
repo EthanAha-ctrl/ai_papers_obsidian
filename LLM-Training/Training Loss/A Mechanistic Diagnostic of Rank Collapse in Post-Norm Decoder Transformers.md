@@ -8,16 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话说:这篇 paper 在讲什么
-
-## 一句话版本
-
-**Post-Norm Transformer 训练塌掉的根因是:前面每一层 attention 都在偷偷让 token 变得越来越像,一旦像到一定程度,反向梯度就会被 RMSNorm 不断压缩、根本传不到浅层去修复,最后网络只能输出"最常见的词",然后就卡死在那儿爬不出来了。**
-
----
-
-## 1. 什么叫"塌了"
+Transformer 训练塌掉的根因是: 前面每一层 attention 都在偷偷让 token 变得越来越像,一旦像到一定程度,反向梯度就会被 RMSNorm 不断压缩、根本传不到浅层去修复,最后网络只能输出"最常见的词",然后就卡死在那儿爬不出来了。
 
 你有一句话 "the cat sat on",经过 Transformer 后,4 个 token 在高维空间里本应该是 4 个不同的点。但训练着训练着,这 4 个点开始往一个位置挤,最后挤成一个点 —— 所有 token 的 hidden state 变得一模一样。
 

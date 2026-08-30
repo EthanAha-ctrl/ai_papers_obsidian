@@ -8,30 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 人话版：The Language of Motion
-
-好，我换个频道，把这篇 paper 当跟朋友在白板前聊天那样讲。
-
----
-
-## 这帮人到底干了啥
-
-一句话：**把 3D 人体动作塞进一个 language model 里，跟文字、语音一起当同一种"语言"处理。**
-
-你想想，人说话的时候，嘴在动、手在比划、脸在做表情、身体还在晃——这本来就是一坨耦合的东西。但 AI 圈子之前一直把它们拆成三个孤岛研究：
-
-- 一拨人搞 **speech → gesture**（给语音生成动作）
-- 一拨人搞 **text → motion**（给文字生成动作）
-- 一拨人搞 **motion captioning**（给动作生成文字）
-
-每个孤岛只能用自己那点配对数据。配对数据贵得要死，motion capture 一小时动辄几千美金。结果就是：每个人都在小池塘里扑腾，模型迁移到新人、新场景就拉胯。
-
-这帮 Stanford 的人说：**别折腾了，全塞进一个 LM 里**。
-
----
-
-## 怎么塞？先得把动作变成 token
+把 3D 人体动作塞进一个 language model 里，跟文字、语音一起当同一种"语言"处理。嘴动、手比划、脸做表情、身体晃 —— 耦合的东西。全塞进一个 LM 里. 
 
 Language model 只认 token，不认连续向量。所以第一步是把 motion "文字化"。
 

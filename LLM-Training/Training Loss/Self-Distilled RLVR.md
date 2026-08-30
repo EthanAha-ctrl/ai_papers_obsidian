@@ -8,12 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话说说 RLSD
-
-## 一句话总结
-
-**OPSD 这条路本质上走错了——拿 teacher 当"模仿目标"会泄露答案；RLSD 的思路是：teacher 只告诉你"这个 token 该奖励多少"，但"该奖励还是惩罚"由 environment reward 说了算。**
+OPSD 这条路本质上走错了——拿 teacher 当"模仿目标"会泄露答案；RLSD 的思路是：teacher 只告诉你"这个 token 该奖励多少"，但"该奖励还是惩罚"由 environment reward 说了算。
 
 ---
 

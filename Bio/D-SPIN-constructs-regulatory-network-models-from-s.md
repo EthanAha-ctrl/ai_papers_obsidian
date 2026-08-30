@@ -9,13 +9,7 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# D-SPIN 人话版：给 Karpathy 的 Intuition Tour
-
-## 一句话版本
-
 D-SPIN 把 gene regulatory network 当成一块**永远不变的电路板**，每种 perturbation（drug、knockdown）只是给电路板的不同位置通电或断电。你观察够多次"通电后的输出"，就能反推电路板长什么样，还能预测没试过的通电组合会产生什么。
-
----
 
 ## 为什么之前的方法不行
 
