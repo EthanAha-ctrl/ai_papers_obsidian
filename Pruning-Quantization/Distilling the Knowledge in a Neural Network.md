@@ -8,20 +8,10 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 一句话版
-
 大模型在 wrong answers 的小概率比例里藏了大量 similarity 信息。用高温 softmax 把它放大、暴露给小模型学，小模型就能逼近大模型的性能 — 部署成本不变，性能白嫖。
-
-# 为什么要做这件事
-
 ensemble 是 ML 里最强的免费 trick：train N 个 model，predict 时取平均，几乎总能涨。但生产部署 N 个大模型太贵 — Android voice search 跑 10 个 8 层 2560-unit DNN？手机要爆炸。
-
-Caruana 2006 年（https://dl.acm.org/doi/10.1145/1150402.1150464）做过类似事：直接用 ensemble 的 logits 当 target 让小模型 match，绕过 softmax。有效但粗糙。
-
+Caruana 2006 年直接用 ensemble 的 logits 当 target 让小模型 match，绕过 softmax。有效但粗糙。
 Hinton 这篇的目标：把这件事做得 principled、能处理小概率、有理论支撑。
-
-# 核心洞察：dark knowledge
 
 一个训练好的 model 在做预测时，对 correct class 给高概率，对 wrong classes 给小概率。多数人只看 correct class，觉得 model 在说"这是 2"。
 
