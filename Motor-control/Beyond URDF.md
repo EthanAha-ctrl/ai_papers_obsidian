@@ -7,12 +7,7 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# Beyond URDF: Universal Robot Description Directory (URDD) 深度解析
-
-## 一、Paper 的核心问题与动机
-
-这篇 paper 来自 Yale 的 Roshan Klein-Seetharaman 和 Daniel Rakita (RelaxedIK, CollisionIK, Proxima 的作者)，attack 的是 robotics software stack 中一个长期存在的 architectural debt。
+robotics software stack 中一个长期存在的 architectural debt。
 
 **问题的本质**：现有的 robot specification formats (URDF, SDF, MJCF, USD) 只 encode 最 minimal 的 raw information：
 - Link connectivity (通过 joints)

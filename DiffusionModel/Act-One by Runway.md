@@ -1,25 +1,5 @@
 
 
-Let me search for information about Act One by Runway and parse the link you provided.
-
-
-
-
-
-
-
-
-
-搜索结果似乎受限。让我基于我已知的知识来为你详细介绍 **Act-One by Runway**。
-
----
-
-# 🎭 Act-One by Runway — 深度技术解析
-
-**参考链接**: https://runwayml.com/research/introducing-act-one
-
-## 一、概述
-
 **Act-One** 是 **Runway** 推出的一项 **performance-driven generative video** 技术。其核心理念是：用户仅需通过 **webcam** 录制自己的 **facial performance**（面部表情和动作），就能将这些 **expression**、**emotion** 和 **nuance** 精确迁移到任意 AI 生成的 **character** 上，无需传统的 **motion capture suit**、**depth sensor**、**3DMM (3D Morphable Model) fitting** 或 **marker-based tracking**。
 
 ### 第一性原理出发点

@@ -8,31 +8,8 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# CRISP 人话版
-
-## 一句话总结
-
-你拿手机拍了段视频，里面一个人在走、在坐、在爬楼梯。CRISP能把这视频变成simulation里能用的东西——人的动作 + 周围环境——让你能在simulation里训练humanoid robot模仿这些动作，而且训练几乎不崩。
-
-## 这问题为啥难
-
-之前VideoMimic（concurrent work，https://arxiv.org/abs/2505.03729 ）的做法是：把场景重建成一个dense mesh，几十万个三角形那种。听起来很合理，但实际跑起来灾难性的：
-
-重建出来的mesh有各种artifact——有些地方重复建了一层（duplicate structure），有些地方该平的不平（bumpy），有些地方该有的surface没了。你把humanoid放进去训练RL，agent会：
-- 卡在"ghost surface"里出不來
-- 被地上不该有的小突起绊飞
-- 因为接触力忽大忽小直接抖死
-
-VideoMimic的RL失败率是**55.2%**。一半的时候训练直接崩。
-
-## CRISP的核心idea
-
-场景里的东西，绝大部分是**平的**。地板是平的，墙是平的，楼梯是平的，椅子面是平的，桌子面是平的，沙发面是平的。
-
-那干嘛不用一堆平板来表示场景？
-
-具体说，用大概50个planar primitive（可以理解成薄板子）来拼出整个场景。这有几个立竿见影的好处：
+手机拍了段视频，里面一个人在走、在坐、在爬楼梯。CRISP能把这视频变成simulation里能用的东西——人的动作 + 周围环境——让你能在simulation里训练humanoid robot模仿这些动作，而且训练几乎不崩。之前VideoMimic的做法是：把场景重建成一个dense mesh，几十万个三角形那种。听起来很合理，但实际跑起来灾难性的：重建出来的mesh有各种artifact——有些地方重复建了一层（duplicate structure），有些地方该平的不平（bumpy），有些地方该有的surface没了。你把humanoid放进去训练RL，agent会：- 卡在"ghost surface"里出不來, - 被地上不该有的小突起绊飞, - 因为接触力忽大忽小直接抖死. VideoMimic的RL失败率是**55.2%**。一半的时候训练直接崩。
+场景里的东西，绝大部分是**平的**。地板是平的，墙是平的，楼梯是平的，椅子面是平的，桌子面是平的，沙发面是平的。那干嘛不用一堆平板来表示场景？具体说，用大概50个planar primitive（可以理解成薄板子）来拼出整个场景。这有几个立竿见影的好处：
 
 1. **平板是convex的**，Isaac Gym算collision detection飞快
 2. **没有artifact**，平板就是平板，不会有ghost surface

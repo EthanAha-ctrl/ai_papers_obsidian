@@ -7,14 +7,7 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# BaB-ND: Branch-and-Bound + Neural Dynamics 深度讲解
-
-## 1. 这篇 paper 在解决什么 problem
-
-核心痛点：**neural dynamics model (ND) 预测能力很强，但 planning 极其困难**。
-
-给定一个学到的 dynamics model $f_{\text{dyn}}$ (一个 NN)，我们要解：
+neural dynamics model (ND) 预测能力很强，但 planning 极其困难。给定一个学到的 dynamics model $f_{\text{dyn}}$ (一个 NN)，我们要解：
 
 $$
 \min_{\{u_t \in \mathcal{U}\}} \sum_{t=t_0}^{t_0+H} c(\hat{x}_t, u_t) \quad \text{s.t.} \quad \hat{x}_{t+1} = f_{\text{dyn}}(\hat{x}_t, u_t)

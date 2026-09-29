@@ -1,16 +1,4 @@
-# InT: Self-Proposed Interventions Enable Credit Assignment in LLM Reasoning 技术详解
-
-## 一、问题背景与动机
-
-### 1.1 Credit Assignment问题的本质
-
-在LLM的reinforcement learning训练中，存在一个根本性的**credit assignment难题**。让我用数学公式来说明：
-
-传统的方法使用**outcome reward**，即：
-```
-r(x, y) ∈ {0, 1}
-```
-其中：
+Credit Assignment问题的本质: 在LLM的reinforcement learning训练中，存在一个根本性的credit assignment难题。让我用数学公式来说明. 传统的方法使用**outcome reward**，即`r(x, y) ∈ {0, 1}`
 - **x** = 输入问题
 - **y** = 模型生成的完整推理轨迹，可分解为 y = (y₀, y₁, ..., y_T)
 - **T** = 推理步骤的数量
@@ -45,10 +33,6 @@ A(x, y_i) = r(x, y_i) - (1/n) Σj=1^n r(x, y_j)
 - 这说明大部分推理轨迹的前半部分是正确的，只是某个关键步骤导致失败
 
 这解释了为什么传统RL效率低下：当成功轨迹稀少时（在困难问题上超过80%的rollout group没有成功轨迹），advantages collapse to zero，没有学习信号。
-
-## 二、Intervention Training (InT) 方法详解
-
-### 2.1 核心思想：利用验证与生成的难度不对称性
 
 论文的关键洞察是LLM在以下任务上存在能力差异：
 

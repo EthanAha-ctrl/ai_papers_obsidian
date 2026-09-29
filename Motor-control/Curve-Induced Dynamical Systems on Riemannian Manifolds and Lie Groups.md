@@ -8,14 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-好的 Andrej，让我换一种方式来讲，用更多的比喻和 intuition，同时依然保持技术的深度。
-
----
-
-## 一、这 paper 到底在解决什么痛点?
-
-想象你在教 robot 穿衣服。你给它 demo 了一个轨迹："先把手伸到袖口，然后顺着胳膊往上拉"。这个轨迹不是一个简单的点在空间里移动，它包含两层信息：
+教 robot 穿衣服。你给它 demo 了一个轨迹："先把手伸到袖口，然后顺着胳膊往上拉"。这个轨迹不是一个简单的点在空间里移动，它包含两层信息：
 
 - **Where**: end-effector 的 pose（位置+朝向），属于 $SE(3)$
 - **How soft/stiff**: impedance controller 的 damping matrix，属于 $S_{++}^6$

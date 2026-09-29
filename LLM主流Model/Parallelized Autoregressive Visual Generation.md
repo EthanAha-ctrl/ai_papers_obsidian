@@ -8,26 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲讲PAR这篇paper
-
-## 一句话总结
-
-**Image里离得远的tokens互相不太care，可以同时生成；离得近的tokens互相紧密依赖，必须排队生成。利用这个property，把576步的sequential generation压缩到147步，速度快3.6倍，质量几乎不降。**
-
----
-
-## 先说痛点在哪
-
-LlamaGen这类AR visual model生成一张256×256的image要走576步forward pass，每步只吐一个token。A100上3B model要12秒一张image，这速度基本没法用。
-
-你可能会想：那每步多吐几个token不就行了？比如每步吐4个token，576步变144步。
-
-**这个naive想法直接死掉**。作者试了，FID从2.62暴涨到5.64，生成的老虎脸扭曲、斑马条纹断裂。
-
-为什么死掉？因为autoregressive sampling有个根本要求：**每个token采样时必须知道之前所有token的实际取值**。这是conditional distribution的正确性要求。
-
-当你parallel生成相邻的4个tokens $v_1, v_2, v_3, v_4$ 时，你实际上是各自独立地从marginal distribution采样：
+Image里离得远的tokens互相不太care，可以同时生成；离得近的tokens互相紧密依赖，必须排队生成。利用这个property，把576步的sequential generation压缩到147步，速度快3.6倍，质量几乎不降。LlamaGen这类AR visual model生成一张256×256的image要走576步forward pass，每步只吐一个token。A100上3B model要12秒一张image，这速度基本没法用。那每步多吐几个token不就行了？比如每步吐4个token，576步变144步。这个naive想法直接死掉。作者试了，FID从2.62暴涨到5.64，生成的老虎脸扭曲、斑马条纹断裂。为什么死掉？因为autoregressive sampling有个根本要求：每个token采样时必须知道之前所有token的实际取值。这是conditional distribution的正确性要求。当你parallel生成相邻的4个tokens $v_1, v_2, v_3, v_4$ 时，你实际上是各自独立地从marginal distribution采样：
 
 $$v_i \sim \mathbb{P}(v_i | \text{context}), \quad i \in \{1,2,3,4\}$$
 

@@ -7,26 +7,7 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# Adaptive Compliance Policy 深度解析
-
-Karpathy 你好，这篇 paper 我详细讲一下。这是 Stanford Shuran Song lab 和 Toyota Research Institute (TRI) 的合作工作，一作 Yifan Hou 是 Matthew Mason 的 PhD student（CMU 时期），现在在 Stanford。这个 lineage 很重要 —— Mason 是 manipulation 领域的奠基人，1981 年那篇 "Compliance and force control" [34] 是这个领域的开山之作，ACP 本质上是 Mason 经典思想的 learning-based 现代化版本。
-
-Project page: https://adaptive-compliance.github.io/
-
----
-
-## 1. 核心问题与 Motivation
-
-### 1.1 传统 visuomotor policy 的盲点
-
-现在主流的 visuomotor policy（Diffusion Policy [6,7], ACT, RT-1, OpenVLA 等）都在做同一件事：predict position action，让 robot 跟踪这个 position。这背后假设是：只要 position 准，task 就成。但 contact-rich manipulation 完全不是这样。
-
-考虑两个 task:
-- **Flipping**: 你要 push 一个物体 pivot against wall，contact force 必须维持在某个范围 —— 太小打滑，太大 wall 滑走
-- **Wiping**: 要 maintain contact 同时不能压坏 vase，contact force 需要在 surface normal 方向有 compliance
-
-Position-only policy 在这些 task 上的根本问题：position error 直接通过 robot 的 mechanical stiffness 转换成 force，stiffness 越高，position noise 变成的 force noise 越大。Stiff policy（实验里的 baseline）在第 4 次 wiping test 就把 tool 弄断了（Fig. 8 middle row）—— 这是 position-only policy 在 contact-rich task 上的典型 failure mode。
+现在主流的 visuomotor policy（Diffusion Policy [6,7], ACT, RT-1, OpenVLA 等）都在做同一件事：predict position action，让 robot 跟踪这个 position。这背后假设是：只要 position 准，task 就成。但 contact-rich manipulation 完全不是这样。**Flipping**: 你要 push 一个物体 pivot against wall，contact force 必须维持在某个范围 —— 太小打滑，太大 wall 滑走. **Wiping**: 要 maintain contact 同时不能压坏 vase，contact force 需要在 surface normal 方向有 compliance. Position-only policy 在这些 task 上的根本问题：position error 直接通过 robot 的 mechanical stiffness 转换成 force，stiffness 越高，position noise 变成的 force noise 越大。Stiff policy（实验里的 baseline）在第 4 次 wiping test 就把 tool 弄断了（Fig. 8 middle row）—— 这是 position-only policy 在 contact-rich task 上的典型 failure mode。
 
 ### 1.2 Compliance 是什么
 

@@ -7,30 +7,10 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# AutoURDF: 从 Point Cloud 到 URDF 的无监督机器人建模
-
-这是 Hod Lipson 组（Columbia Creative Machines Lab）的工作，第一作者 Jiong Lin。核心 idea 非常 elegant：给一段 robot 运动的 point cloud 视频（10 帧），无监督地输出一个能在 PyBullet 里跑起来的 URDF 文件。整个 pipeline 没有任何 ground truth label，没有 motor command，没有 forward kinematics，纯视觉输入。
-
-paper link: https://jl6017.github.io/AutoURDF/
-
----
-
-## 1. 动机与定位
-
-机器人建模（URDF/MJCF/USD）传统上是个体力活，需要 CAD 转换或者手写 XML。已有 automated 方法大致分三类：
-
+从 Point Cloud 到 URDF 的无监督机器人建模. 给一段 robot 运动的 point cloud 视频（10 帧），无监督地输出一个能在 PyBullet 里跑起来的 URDF 文件。整个 pipeline 没有任何 ground truth label，没有 motor command，没有 forward kinematics，纯视觉输入。从 unlabeled point cloud 直接构造 functional URDF，能处理到 18 DoF 的复杂 morphology（包括 OP3 humanoid 这种 multi-branch 链）。机器人建模（URDF/MJCF/USD）传统上是个体力活，需要 CAD 转换或者手写 XML。已有 automated 方法大致分三类：
 1. **Robot self-modeling**（如 [Chen et al. 2022](https://www.science.org/doi/10.1126/scirobotics.abn1944), [Liu et al. 2024](https://diffbot.cs.columbia.edu/)）：用 motor command + implicit neural representation 学 morphology。问题是 implicit 表示和 physics simulator 不兼容，并且需要 motor 信号做 supervision。
-
 2. **Articulated object modeling**（PartNet-Mobility 系，[Ditto](https://ditto3d.github.io/), [Real2Code](https://real2code.github.io/), [URDFormer](https://urdformer.github.io/)）：处理 laptop、drawer 这种简单结构。假设每个 moving part 都挂在一个 single parent 上，对 serial chain robot 不成立。
-
 3. **Watch-It-Move / Reart** ([Noguchi et al. 2022](https://openaccess.thecvf.com/content/CVPR2022/papers/Noguchi_Watch_It_Move_Unsupervised_Discovery_of_3D_Joints_CVPR_2022_paper.pdf), [Liu et al. 2023](https://openaccess.thecvf.com/content/CVPR2023/papers/Liu_Building_Rearticulable_Models_for_Arbitrary_3D_Objects_From_4D_Point_CVPR_2023_paper.pdf))：能 reconstruct robots，但用 custom reanimation code 而非标准 URDF，且训练慢（Reart 在同样机器上 35 分钟 vs AutoURDF 1 分钟）。
-
-AutoURDF 的位置：第一个从 unlabeled point cloud 直接构造 functional URDF，能处理到 18 DoF 的复杂 morphology（包括 OP3 humanoid 这种 multi-branch 链）。
-
----
-
-## 2. Method 深入讲解
 
 整个 pipeline 输入 $\mathcal{P} = \{P^t \in \mathbb{R}^{3 \times N}\}_{t \in [1,T]}$，输出三件套：
 - **Segmented parts** $\mathcal{L} = \{L_i\}$：每个 link 的 point cloud

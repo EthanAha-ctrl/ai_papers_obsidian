@@ -7,24 +7,14 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
+把 image / video / 3D 三种 modality 塞进同一个 latent space，并且同时支持 reconstruction 和 understanding。
+下面我把核心 idea、架构 trick、训练 recipe、实验数据全部展开讲，并尽量 build 你的 intuition。
 
-# ATOKEN 深度讲解：Apple 的 Unified Visual Tokenizer
-
-Andrej, 这篇 paper 我读完之后直觉上觉得它在做一件 vision community 早就该做的事 —— 把 image / video / 3D 三种 modality 塞进同一个 latent space，并且同时支持 reconstruction 和 understanding。下面我把核心 idea、架构 trick、训练 recipe、实验数据全部展开讲，并尽量 build 你的 intuition。
-
----
-
-## 1. 为什么这件事难：visual tokenization 的"碎片化"困境
-
-LLM 之所以能一个 model 干所有事，关键在于 BPE tokenizer 把 code、英文、中文、表格全部映射到统一 token space（[Sennrich et al., 2015, BPE](https://arxiv.org/abs/1508.07909)）。Vision 这边一直没做到这件事，paper 在 Section 2 列了三层 fragmentation：
-
-1. **Task specialization**：reconstruction tokenizer（SD-VAE、VQGAN、Cosmos、GigaTok）只管像素细节；understanding encoder（CLIP、SigLIP2、VideoPrism）只管语义。两边互不兼容。
-2. **Modality fragmentation**：image tokenizer 处理不了 video 的时间维度；video tokenizer（Hunyuan、Wan、TAE）处理不了 3D；3D tokenizer（Trellis-SLAT）又用不了 image/video 大规模预训练数据。
-3. **Architectural trade-offs**：convolutional tokenizer 在 scaling 上收益递减（[GigaTok, Xiong et al., 2025](https://arxiv.org/abs/2504.08736)）；pure transformer tokenizer（[ViTok, Hansen-Estruch et al., 2025](https://arxiv.org/abs/2501.09755)）scaling 好但 GAN 训练不稳定。
+1. Task specialization：reconstruction tokenizer（SD-VAE、VQGAN、Cosmos、GigaTok）只管像素细节；understanding encoder（CLIP、SigLIP2、VideoPrism）只管语义。两边互不兼容。
+2. Modality fragmentation：image tokenizer 处理不了 video 的时间维度；video tokenizer（Hunyuan、Wan、TAE）处理不了 3D；3D tokenizer（Trellis-SLAT）又用不了 image/video 大规模预训练数据。
+3. Architectural trade-offs：convolutional tokenizer 在 scaling 上收益递减（[GigaTok, Xiong et al., 2025](https://arxiv.org/abs/2504.08736)）；pure transformer tokenizer（[ViTok, Hansen-Estruch et al., 2025](https://arxiv.org/abs/2501.09755)）scaling 好但 GAN 训练不稳定。
 
 ATOKEN 的目标就是同时解决这三件事，Table 1 给了一张很清晰的对比表 —— 它是唯一一个在 reconstruction/understanding × image/video/3D × continuous/discrete × GAN-free × native resolution × temporal compression 所有维度都打勾的方法。
-
----
 
 ## 2. 核心洞察：Sparse 4D Latent Space
 

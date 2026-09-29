@@ -8,58 +8,13 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话说说这篇 Paper
-
-好，我把刚才那堆公式和术语全部嚼碎了，用最直觉的方式重新讲一遍。
-
----
-
-## 一句话总结
-
-一群人做了一个**完全柔软的机械手**，它能**感觉到东西要滑掉了**，然后**自己加大力气抓住**，成功抓起了生鸡蛋和剥壳鸡蛋，鸡蛋不破。
-
-就这么简单。但里面的 engineering 细节非常 elegant。
-
----
-
-## 问题是什么？
-
-你抓一个杯子，如果用力太小，杯子掉地上碎了；用力太大，杯子被捏碎。人手怎么解决这个问题的？
-
-你抓杯子的时候，手指会感觉到一个微小的"滑动"信号——杯子还没真正掉下去之前，皮肤已经感觉到了一点点 shear force、一点点 microvibration。你的神经系统立刻 reflex 把手指捏得更紧，杯子稳住。整个过程你都没思考，spinal reflex 搞定的。
-
-机器人也想这么干，但有两个大麻烦：
-
-**麻烦一**：传统的 slip sensor 是 rigid 的（硬的），装在 soft gripper 上有 mechanical mismatch，就像你给一只柔软的章鱼爪绑上一块铁片，触感全废。
-
-**麻烦二**：pneumatic soft gripper（气动的软体爪）的 pressure-force 关系是非线性的，有 hysteresis，你很难精确控制"我要输出 1.5 N 的力，所以气压调到 X kPa"。不像电机，给多少电流就是多少扭矩。
-
-这篇 paper 同时解决了这两个 trouble。
-
----
-
-## Sensor 怎么做的？——偷师人皮皮肤
-
-人皮皮肤有个巧思：**Merkel cells 长在 epidermis 和 dermis 的交界处**。epidermis 相对硬，dermis 相对软，这个 hard-soft interface 会产生 **stress concentration**——就是力会被"放大"集中到这个位置。所以 Merkel cells 虽然本身很小，却能感知很微弱的 touch。
-
-作者就 mimic 这个：在一个 soft PDMS substrate（很软，~100μm 厚）上面，粘一个 hard PDMS pillar（硬，3mm 厚）。然后在 hard-soft junction 旁边贴一个 CNT crack-based strain sensor。
-
-**关键 insight**：当你对 pillar 施加 shear force，pillar 会 tilt，tilt 导致 junction 旁边的 soft substrate 局部产生很大的 strain。FEM simulation 显示这个 strain 是正常位置的 **2-3 倍**，而且和施加的 strain 大小无关——是纯 geometric amplification，所以 robust。
-
-再用 crack-based sensor 把这个 strain 放大成巨大的 resistance change（CNT network 出现 microcracks，电阻飙升）。
-
+做了一个**完全柔软的机械手**，它能**感觉到东西要滑掉了**，然后**自己加大力气抓住**，成功抓起了生鸡蛋和剥壳鸡蛋，鸡蛋不破。你抓一个杯子，如果用力太小，杯子掉地上碎了；用力太大，杯子被捏碎。人手怎么解决这个问题的？你抓杯子的时候，手指会感觉到一个微小的"滑动"信号——杯子还没真正掉下去之前，皮肤已经感觉到了一点点 shear force、一点点 microvibration。你的神经系统立刻 reflex 把手指捏得更紧，杯子稳住。整个过程你都没思考，spinal reflex 搞定的。机器人上面的麻烦：**麻烦一**：传统的 slip sensor 是 rigid 的（硬的），装在 soft gripper 上有 mechanical mismatch，就像你给一只柔软的章鱼爪绑上一块铁片，触感全废。**麻烦二**：pneumatic soft gripper（气动的软体爪）的 pressure-force 关系是非线性的，有 hysteresis，你很难精确控制"我要输出 1.5 N 的力，所以气压调到 X kPa"。不像电机，给多少电流就是多少扭矩。这篇 paper 同时解决了这两个 trouble。
+人皮皮肤有个巧思：**Merkel cells 长在 epidermis 和 dermis 的交界处**。epidermis 相对硬，dermis 相对软，这个 hard-soft interface 会产生 **stress concentration**——就是力会被"放大"集中到这个位置。所以 Merkel cells 虽然本身很小，却能感知很微弱的 touch。作者就 mimic 这个：在一个 soft PDMS substrate（很软，~100μm 厚）上面，粘一个 hard PDMS pillar（硬，3mm 厚）。然后在 hard-soft junction 旁边贴一个 CNT crack-based strain sensor。当你对 pillar 施加 shear force，pillar 会 tilt，tilt 导致 junction 旁边的 soft substrate 局部产生很大的 strain。FEM simulation 显示这个 strain 是正常位置的 **2-3 倍**，而且和施加的 strain 大小无关——是纯 geometric amplification，所以 robust。再用 crack-based sensor 把这个 strain 放大成巨大的 resistance change（CNT network 出现 microcracks，电阻飙升）。
 **两级放大**：
 1. Geometry 放大 2-3 倍
 2. Material crack 放大几十到几百倍
 
-合起来 sensitivity 爆表，能探测到 5 米外玻璃球落地的振动。
-
-还有一个巧思：**direction dependence**。pillar tilt 是有方向的，如果你站在 pillar 的 180° 位置（正对 tilt 方向的远端），strain 最大；站在 90° 位置（侧面），strain 几乎为零。所以一个 sensor 还能告诉你"slip 朝哪个方向发生"。这是很多 omnidirectional sensor 做不到的。
-
-Reference: Kang et al., Nature 2014, crack-based sensor 的鼻祖。https://www.nature.com/articles/nature14006
-
----
+合起来 sensitivity 爆表，能探测到 5 米外玻璃球落地的振动。direction dependence。pillar tilt 是有方向的，如果你站在 pillar 的 180° 位置（正对 tilt 方向的远端），strain 最大；站在 90° 位置（侧面），strain 几乎为零。所以一个 sensor 还能告诉你"slip 朝哪个方向发生"。这是很多 omnidirectional sensor 做不到的。
 
 ## Gripper 怎么做的？——3D 打印 + Linear Response
 

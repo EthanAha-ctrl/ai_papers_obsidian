@@ -8,15 +8,9 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-# ActionMesh 深度解读: 把 3D diffusion "撑" 出一个时间轴
+拿一个已经训好的 image-to-3D latent diffusion 模型 (TripoSG), 用最小的改动给它加上 temporal axis, 再用一个 temporal autoencoder 把"独立的 4D 形状序列"折叠成一个"单一 topology 的 animated mesh". 
 
-Andrej, 这篇 paper 我读了之后直觉上觉得很干净, 核心贡献就一句话: **拿一个已经训好的 image-to-3D latent diffusion 模型 (TripoSG), 用最小的改动给它加上 temporal axis, 再用一个 temporal autoencoder 把"独立的 4D 形状序列"折叠成一个"单一 topology 的 animated mesh"**. 这两步分离得很漂亮, 因为它们各自承担了不同的责任 — Stage I 负责"几何随时间演化且跨帧一致", Stage II 负责"绑定到同一个 mesh 拓扑上以支持 texture/retargeting".
-
-下面我尽量按 build-intuition 的方式展开.
-
----
-
-## 1. 为什么 naive 方法会失败 — Figure 3 的现象
+这两步分离得很漂亮, 因为它们各自承担了不同的责任 — Stage I 负责"几何随时间演化且跨帧一致", Stage II 负责"绑定到同一个 mesh 拓扑上以支持 texture/retargeting".
 
 最直觉的 baseline 是: 拿 image-to-3D model (比如 TripoSG) 逐帧跑, 每帧都从相同 Gaussian noise 开始. 结果会出现两类不一致:
 - **全局朝向漂移**: 同一只马, 在 frame 1 是面向 +x, frame 5 突然面朝 +z. 因为每帧 latent diffusion 的 conditioning (DINOv2 feature) 是独立的, 没有跨帧信号.
