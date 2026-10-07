@@ -1,2726 +1,661 @@
-# # SceneCraft: Layout-Guided 3D Scene Generation 详细技术讲解
+---
+source_pdf: SceneCraft Layout-Guided 3D Scene Generation.pdf
+paper_sha256: 14445215c9e339ef611eef852e0b9db643d1e2f991dde077720aa98a52cd7015
+processed_at: '2026-08-12T03:49:21-07:00'
+target_folder: DiffusionModel
+model: z-ai/glm-5.2
+reasoning_effort: max
+followup_prompt: 用人话说说
+mineru_required_version: 3.4.4
+---
 
-## 论文概述
+# SceneCraft 人话版
 
-这是来自上海交通大学和伊利诺伊大学香槟分校的研究工作，发表在2024年。SceneCraft 是一个**基于布局指导的3D场景生成框架**，能够根据用户提供的文本描述和空间布局偏好生成详细的室内场景。
+## 一句话说清楚这帮人在干啥
 
-### 核心创新
-1. **用户友好的边界框场景（BBS）表示**：类似 Minecraft 建造方式
-2. **复杂多房间场景生成**：突破全景视图限制
-3. **语义和深度条件扩散模型 SceneCraft2D**
+你想盖个房子，但不想学 Blender 或者 Unreal Engine。你就拿一堆方块像玩 Minecraft 一样摆一摆，告诉它"这里是卧室、那里是客厅、中间放张床"，再补一句"我要 Van Gogh 风格的"，然后它就给你生成一个能 360 度随便走的 3D 房间。
+
+就这么个事。
 
 ---
 
-## 1. 背景与动机
+## 为什么这事难
 
-### 问题现状
+之前的 text-to-3D 方法分两类，都不太行：
 
-传统3D建模工具创建复杂场景是繁琐的任务。虽然已有一些 text-to-3D 生成方法，但存在以下限制：
+**第一类是 inpainting 路线**（Text2Room 这种）。它就像你拿手机拍一张照，然后让 AI 把旁边没拍到的地方"补全"。问题是补着补着就乱套了——你在卧室里转一圈，它因为 prompt 里有"bedroom"这个字，每转一个角度都给你塞一张床，最后搞出四张床的恐怖房间。
 
-| 限制 | 说明 |
-|------|------|
-| **规模受限** | 仅支持小规模物体生成 |
-| **控制不足** | 对形状和纹理的控制有限 |
-| **几何不一致** | 难以保持跨视图的3D一致性 |
-| **布局缺失** | 仅依赖文本提示，缺乏精确的场景结构控制 |
+**第二类是 panorama 路线**（ControlRoom3D、Ctrl-Room 这种）。它就像你站在房间正中央转一圈拍 360 度全景图。听起来很美，但有两个死穴：
+- 房间形状必须简单，L 形或者 S 形的就抓瞎
+- 只能站着原地转，不能走进走出，更别说从卧室走到客厅这种
 
-### 现有方法的缺陷
-
-#### 1.1 基于全景的方法（如 MVDiffusion [60]）
-- 使用全景图像生成
-- **限制**：无法处理复杂形状的房间（如 L 形、S 形结构）
-- 视角受限，难以生成多层或多房间场景
-
-#### 1.2 基于图像修补的方法（如 Text2Room [24]）
-- 迭代式生成未见区域
-- **限制**：导致重复或矛盾的帧
-- 难以保持合理场景几何
-
-#### 1.3 基于 NeRF 组合的方法（如 Set-the-scene [12]）
-- 训练和组合不同物体
-- **限制**：无法生成尺寸差异大的物体（如墙上挂的百叶窗、电视）
+而且这两类都没法做**多房间**。你想生成一个三居室套房？做不了。
 
 ---
 
-## 2. SceneCraft 方法架构
+## SceneCraft 的核心 trick
 
-### 2.1 整体流程图
+作者的思路特别清爽，三步走：
 
-```
-输入层：
-├─ 文本提示：描述场景风格和内容
-├─ 边界框场景 (BBS)：3D空间布局指导
-└─ 相机轨迹：在 BBS 空间中定义
+### 第一步：把 3D layout 拍扁成 2D
 
-处理流程：
-┌─────────────────────────────────────────────┐
-│  Stage 1: SceneCraft2D 预训练               │
-├─────────────────────────────────────────────┤
-│  BBS → 渲染 → Bounding-Box Images (BBI)     │
-│  BBI + 文本 → ControlNet → 多视图图像        │
-├─────────────────────────────────────────────┤
-│  Stage 2: 蒸馏引导场景生成                   │
-├─────────────────────────────────────────────┤
-│  多视图图像 → SDS 等价管道 → NeRF 场景表示   │
-│  布局感知深度约束 → 几何一致性                │
-│  迁移策略 → 消除雾状伪影                      │
-│  纹理整合 → 清晰纹理                        │
-└─────────────────────────────────────────────┘
+你摆的 Minecraft 方块叫 **BBS**（Bounding-Box Scene）。每个方块带一个 category label（"这是床"、"这是墙"）。
 
-输出：
-└─ 3D 场景表示（NeRF/3D Gaussian Splatting）
-```
+然后从你指定的 camera trajectory（任意路径，比如"从门口走进卧室，再走到客厅"）的每个视角，把 BBS render 成一张 2D 图，叫 **BBI**（Bounding-Box Image）。这张图每个 pixel 有两个信息：semantic category + depth。
 
-### 2.2 边界框场景（BBS）设计
+**关键 insight**：3D scene generation 这个问题太硬，但如果分解成"很多个 2D layout-conditioned image generation"，每个就是 Stable Diffusion 擅长的事。
 
-#### BBS 结构定义
+### 第二步：训练一个 2D diffusion model
 
-BBS 是一种**用户友好的布局接口**，允许用户用简单的边界框设计复杂的房间布局：
+叫 **SceneCraft2D**。基于 Stable Diffusion，加两个 ControlNet：
+- 一个吃 semantic map（哪些 pixel 是床、哪些是墙）
+- 一个吃 depth map（哪些 pixel 远、哪些近）
 
-```
-BBS 特性：
-├─ 每个对象 = 边界框的并集 + 类别标签
-├─ 支持自由形对象（L 形、S 形桌子）
-├─ 类似 Minecraft 建造方式
-└─ 3D 坐标系统：精确的空间表示
+给它 BBI + 一句话，它就生成一张漂亮的房间图。
 
-对象表示：
-Object_i = {
-    bounding_boxes: [BB_1, BB_2, ..., BB_n],
-    category_label: one_hot(semantics),
-    spatial_position: (x, y, z)
-}
-```
+**最 clever 的设计**：训练时用一句万能废话 "This is one view of a room."，不用 BLIP 自动生成 caption。
 
-#### BBS 渲染到 BBI
+为啥？因为 layout 信息已经在 BBI 里 dense 编码了，prompt 再描述 content 就 redundant 了，还会让 model overfit 到具体物体名字上。用废话 prompt 反而保住了 Stable Diffusion 的 generative power。
 
-从 BBS 渲染生成的 Bouncing-Box Images (BBI) 包含两个通道：
+推理时换成 "This is one view of a bedroom in Van Gogh painting style."，style 就进来了，layout 还跟着 BBI 走。
 
-| 通道 | 内容 | 用途 |
-|------|------|------|
-| **语义图** | 类别的 one-hot 向量 | 指导语义生成 |
-| **深度图** | BBS 的深度值 | 指导几何生成 |
+这就是一个漂亮的 **train-inference decoupling**：训练 minimal，推理 rich。
+
+### 第三步：把 2D 图像蒸馏回 3D
+
+有了 SceneCraft2D 能生成各种视角的图，现在要把它们粘成一个 3D scene。
+
+用的是 **IN2N-style 的 iterative dataset replacement**，跟 vanilla SDS 等价但更稳定。具体操作：
+1. 维护一个 multi-view image dataset
+2. GPU 1 一直训练 NeRF（Nerfacto from NeRFStudio）
+3. GPU 2 一直用 SceneCraft2D 生成新图，替换 dataset 里旧的
+4. NeRF 慢慢被"洗"成 generated scene 的形状
 
 ---
 
-## 3. SceneCraft2D：布局引导的图像生成
+## 几个关键的 engineering trick
 
-### 3.1 架构细节
+光靠上面三步还跑不出好结果，作者加了四个 trick：
 
-SceneCraft2D 是基于 Stable Diffusion [50] 的增强版本，通过 ControlNets [75] 注入 BBI 条件：
+### Trick 1：Depth Constraint 帮几何快速收敛
 
-```
-SceneCraft2D 架构：
+公式 (1)：
+$$\mathcal{L}_{\mathrm{depth}} = [\max(||D_{\mathrm{render}} - D_{\mathrm{layout}}|| - \delta, 0)]^2$$
 
-输入：
-├─ 文本提示："This is one view of a [style] room."
-└─ BBI 条件：
-    ├─ 语义图 → ControlNet_semantic
-    └─ 深度图 → ControlNet_depth
+- $D_{\mathrm{render}}$：NeRF 渲染出来的 depth
+- $D_{\mathrm{layout}}$：从 BBS 渲染出来的 pseudo ground truth depth
+- $\delta$：允许的浮动范围
+- $\max(\cdot, 0)$：只在误差超过 $\delta$ 时才惩罚
+- 外面再平方一下
 
-处理：
-├─ Stable Diffusion 主干网络
-├─ ControlNet_semantic：注入语义约束
-└─ ControlNet_depth：注入几何约束
+这其实是个 **squared hinge loss with deadzone**。Deadzone $[-\delta, \delta]$ 内不罚，让 NeRF 能学到比 BBS 更细的几何；超出 deadzone 才罚，强制粗几何对齐 BBS。
 
-输出：高质量视图图像
-```
+**只在训练早期开，后期关掉**。早期靠它快速抓住房间骨架，后期关掉让 model 学 fine detail。
 
-### 3.2 训练策略
+为啥 free camera 这么需要这个？因为 panorama 方法靠 8 个固定 view 之间的强约束来 lock 几何。SceneCraft 用任意 camera，view 间约束弱，必须靠 explicit depth prior 补上。
 
-#### 数据准备
+Figure B 的 ablation 一目了然：没这个 loss，几何完全乱套；有这个，early stage 就 converge 到正确位置。
 
-从室内数据集（ScanNet++ [71] 和 HyperSim [49]）构建训练数据：
+### Trick 2：Annealing 控制 coarse-to-fine
 
-```
-训练数据构建流程：
-┌────────────────────────────────────────────┐
-│  原始场景数据                               │
-│  ├─ 语义点云                               │
-│  ├─ 相机轨迹                               │
-│  └─ 多视图图像                             │
-├────────────────────────────────────────────┤
-│  数据转换                                   │
-│  ├─ 语义点云 → BBS（边界框提取）            │
-│  ├─ BBS + 相机轨迹 → BBI（渲染）            │
-│  ├─ 多视图图像 → 目标图像                   │
-│  └─ 生成基础提示："This is one view of a room." │
-└────────────────────────────────────────────┘
-```
+用 SDEdit 思路：早期加很多 noise，SceneCraft2D 自由发挥，把房间结构搭起来；晚期加很少 noise，SceneCraft2D 只做 refine，把细节做漂亮。
 
-#### 关键训练参数
+这个 annealing 让 distillation 自然走 coarse-to-fine，避免早期 inconsistent 的图把 NeRF 带偏。
 
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| **Batch Size** | 16 | 双 GPU |
-| **Learning Rate** | 5e-5 | 常数学习率 |
-| **Iteratioins** | ~10k | 训练迭代次数 |
-| **GPU** | 2× NVIDIA A6000 | 硬件配置 |
-| **Image Size** | 512×768 | 生成分辨率 |
-| **Memory** | ~6GB (FP16) | 单 GPU 内存 |
+### Trick 3：Dual Representation Migration 去雾
 
-#### 基础提示策略
+这是我觉得最 smart 的 trick。
 
-论文使用独特的**通用基础提示**方法：
+**问题**：distillation 早期生成的图 3D consistency 差，"平均"到 NeRF 上会产生 **flocs**——悬浮在表面和空气中的雾状 artifact。后期即使 diffusion 输出 consistent 了，这些 flocs 因为 density 已经 condensed，很难稀释掉，还会引发 Janus problem（多面问题）。
 
-```python
-# 训练时
-base_prompt = "This is one view of a room."  # 不包含具体语义信息
+**解法**：维护两个 NeRF：
+- $S_c$：coarse（旧的，有 flocs）
+- $S_f$：fine（从头开始的新 NeRF）
 
-# 推理时（生成时）
-user_prompt = "This is one view of a bedroom in Van Gogh painting style."
+流程：
+1. Freeze $S_c$
+2. 渲染 $S_c$ 的图，加 partial noise（SDEdit-style）
+3. SceneCraft2D 生成 similar 但更高质量的图
+4. 用这些图训练 $S_f$
+5. 定期把 $S_c$ 的信息同步到 $S_f$
 
-# 优势：
-# 1. 避免过拟合到特定词汇
-# 2. 保持预训练模型的生成能力
-# 3. 支持通过提示控制风格
-```
+**Intuition**：与其在 $S_c$ 上"原地修复"难处理的 flocs，不如另起炉灶 $S_f$，把 $S_c$ 当 anchor 来保内容，让 $S_f$ 学到干净版本。这是一种 **soft reset**。
 
-### 3.3 为什么不使用 BLIP2 标题？
+### Trick 4：VGG Perceptual Loss 保 sharp texture
 
-实验表明，使用 BLIP2 [29] 生成的图像标题会导致**控制失败**：
+如果用 pixel-wise RGB loss 监督 NeRF，多视图间的小 inconsistency 被 average，结果就是 blurry。
 
-| 方法 | 效果 | 原因 |
-|------|------|------|
-| **基础提示** | ✅ 成功 | 保持模型通用性 |
-| **BLIP2 标题** | ❌ 失败 | 过拟合到特定描述 |
-| **复杂条件** | ✅ 需要通用提示 | 避免条件冲突 |
+换成 VGG perceptual loss + stylization loss：在 feature space 对齐，保 semantic 和 style，不强求 pixel-perfect。
 
-原理：布局条件越复杂，提示应该越通用，以避免条件冲突。
+效果：Figure C 显示，没这招结果糊成一团，有这招 sharp 得很。
+
+**Bonus**：这个策略让整个 pipeline end-to-end，不需要像 Text2Room 那样后续 mesh export + post-optimization。
 
 ---
 
-## 4. 蒸馏引导场景生成
+## 实验结果说了什么
 
-### 4.1 蒸馏过程（IN2N 风格）
+### 定量（Table 1）
 
-SceneCraft 采用 IN2N [21] 风格的蒸馏管道（被 HiFA [77] 证明等价于 SDS [46]）：
+| Method | CS↑ | IS↑ | 3DC↑ | VQ↑ |
+|---|---|---|---|---|
+| Text2Room | 22.98 | 4.20 | 3.11 | 3.06 |
+| MVDiffusion | 23.85 | **4.36** | 3.20 | 3.35 |
+| Set-the-scene | 21.32 | 2.98 | 3.53 | 2.41 |
+| **SceneCraft** | **24.34** | 3.54 | **3.71** | **3.56** |
 
-```
-蒸馏流程：
-┌──────────────────────────────────────────────────┐
-│  初始化：真实多视图数据集                         │
-├──────────────────────────────────────────────────┤
-│  迭代过程：                                       │
-│  ├─ 步骤1：用当前多视图数据集训练场景表示 (NeRF)   │
-│  ├─ 步骤2：用 SceneCraft2D 生成新图像替换数据集   │
-│  └─ 步骤3：重复上述步骤                           │
-├──────────────────────────────────────────────────┤
-│  结果：场景表示逐渐收敛到生成的场景                │
-└──────────────────────────────────────────────────┘
-```
+- **CLIP Score** 最高：text-image alignment 最好
+- **IS 比 MVDiffusion 低**：因为 fixed category finetuning 牺牲 diversity，作者承认这是个 trade-off
+- **3D Consistency** 最高：depth constraint + distillation 的功劳
+- **Visual Quality** 最高：texture consolidation 的功劳
 
-### 4.2 退火策略
+没报 FID，因为 FID 依赖 ground truth dataset，跨数据集比较不公平。
 
-受 SDEdit [39] 和 [77] 启发，提出退火策略：
+### 定性（Figure 4）
 
-```python
-# 退火控制生成相似度
-def annealing_schedule(iteration, total_iterations):
-    """
-    控制生成图像与当前场景的相似度
-    早期：自由生成以满足 BBS 和提示
-    后期：生成相似但更高质量的场景进行细化
-    """
-    similarity_threshold = compute_threshold(iteration, total_iterations)
-    return similarity_threshold
+三种 baseline 各有各的死法：
+- MVDiffusion：L 形房间抓瞎，prompt 描述 layout 不准
+- Text2Room：一张 prompt 含 "bedroom" 就给你生成四张床
+- Set-the-scene：墙上挂的 blinds、TV 这种 size 差异大的搞不定
 
-# 效果：
-# - 早期：SceneCraft2D 自由生成满足布局
-# - 后期：SceneCraft2D 作为细化器改进质量
-```
+SceneCraft 全都能搞定。
 
-### 4.3 布局感知深度约束
+### 真正炫技的（Figure 5）
 
-#### 数学公式
+多房间、不规则形状、自由 camera trajectory。比如 Scene A 卧室连客厅，Scene B-D 多个小房间组成的复杂室内系统。
 
-在蒸馏初期添加深度损失函数：
+panorama 方法理论上就做不了这事，因为 panorama 假设单点 360 度。多房间的 occlusion 和 viewpoint 变化直接打破这个假设。
 
-```
-公式 1：深度约束损失
+### 训练成本
 
-ℒ_depth = [max(||D_render - D_layout|| - δ, 0)]²
+- SceneCraft2D finetuning：2× A6000，10k iterations
+- Scene generation：150 frames 3-4 小时，300 frames 5-6 小时
+- 对比 ShowRoom3D 10 小时，UrbanArchitect 12 小时
 
-其中：
-- D_render：场景表示渲染的像素深度
-- D_layout：BBS 输入的伪真值深度
-- δ：软阈值（允许合理波动范围）
-
-损失特性：
-├─ 当 ||D_render - D_layout|| ≤ δ 时：ℒ_depth = 0
-├─ 当 ||D_render - D_layout|| > δ 时：ℒ_depth > 0
-└─ 确保 D_render 在合理范围内收敛
-```
-
-#### 实施策略
-
-```python
-# 深度约束策略
-def depth_constraint_schedule(iteration, total_iterations):
-    """
-    布局感知深度约束应用策略
-    """
-    if iteration < threshold_start:
-        # 初期：启用深度约束，快速收敛到粗略几何
-        apply_depth_loss = True
-        loss_weight = 1.0
-    elif iteration < threshold_end:
-        # 中期：逐渐减少权重
-        apply_depth_loss = True
-        loss_weight = linear_decay(iteration)
-    else:
-        # 后期：禁用深度约束，学习细粒度几何
-        apply_depth_loss = False
-        loss_weight = 0.0
-    
-    return apply_depth_loss, loss_weight
-
-# 效果：
-# - 初期：快速收敛到合理几何
-# - 后期：学习细粒度细节
-```
-
-### 4.4 消除雾状伪影
-
-#### 问题分析
-
-蒸馏初期生成的图像一致性较低，导致在场景表示中 averaging 不一致的多视图图像时产生：
-
-- 表面附近的模糊雾状伪影
-- 空中 condensed volume density
-- Janus 问题（多面孔问题）
-
-#### 迁移策略
-
-论文提出**周期性迁移**方法：
-
-```
-双场景表示策略：
-┌──────────────────────────────────────────────────┐
-│  S_c：粗略场景表示（冻结）                         │
-│  S_f：细化场景表示（训练）                         │
-├──────────────────────────────────────────────────┤
-│  迁移流程：                                       │
-│  1. 用当前场景生成相似的细化图像（仅添加 t<T 噪声）  │
-│  2. 用细化图像监督 S_f                            │
-│  3. 定期用 S_c 更新 S_f（较小训练间隔）            │
-│  4. 同步两个场景表示中的最新信息                   │
-└──────────────────────────────────────────────────┘
-
-噪声控制：
-├─ SDEdit 噪声添加：控制相似度
-├─ t < T：保持与 S_c 渲染结果的相似性
-└─ 避免过度改变，仅细化细节
-```
-
-#### 实施细节
-
-```python
-# 周期性迁移伪代码
-class DualSceneMigration:
-    def __init__(self):
-        self.S_coarse = SceneRepresentation()  # 粗略表示
-        self.S_fine = SceneRepresentation()     # 细化表示
-        self.migration_interval = 100  # 迁移间隔
-    
-    def training_step(self, iteration):
-        if iteration > early_stage_start:
-            # 维护两个场景表示
-            self.migration_process(iteration)
-    
-    def migration_process(self, iteration):
-        """
-        周期性迁移过程
-        """
-        # 步骤1：冻结 S_coarse
-        self.S_coarse.freeze()
-        
-        # 步骤2：生成相似的细化图像
-        refined_images = SceneCraft2D.generate(
-            condition=self.S_coarse.render(),
-            noise_level=compute_noise_level(iteration)
-        )
-        
-        # 步骤3：监督 S_fine
-        self.S_fine.train supervised by=refined_images
-        
-        # 步骤4：定期更新
-        if iteration % self.migration_interval == 0:
-            self.S_fine.update_from(self.S_coarse)
-
-# 效果：
-# - 消除雾状伪影
-# - 避免Janus问题
-# - 获得更细粒度、清晰的场景
-```
-
-### 4.5 纹理整合
-
-#### 感知损失
-
-引入 VGG [25] 感知损失和风格化损失：
-
-```python
-# 纹理整合损失
-def texture_consolidation_loss(render, generated):
-    """
-    纹理整合损失函数
-    """
-    # 感知损失（基于 VGG 特征）
-    perceptual_loss = L1(
-        VGG(render),
-        VGG(generated)
-    )
-    
-    # 风格损失（Gram 矩阵）
-    style_loss = L1(
-        gram_matrix(VGG(render)),
-        gram_matrix(VGG(generated))
-    )
-    
-    # 总损失
-    total_loss = λ_perceptual * perceptual_loss + λ_style * style_loss
-    
-    return total_loss
-
-# 优势：
-# - 生成语义和风格一致的场景
-# - 避免像素级匹配导致的模糊
-# - 无需显式的网格导出和优化
-```
-
-#### 对比传统方法
-
-| 方法 | 损失函数 | 结果 | 缺陷 |
-|------|----------|------|------|
-| **传统 SDS** | 潜在空间损失 + RGB 损失 | 模糊 | 无法捕获高频信息 |
-| **SceneCraft** | 感知损失 + 风格损失 | 清晰 | 需要感知损失计算 |
+效率上也有优势。
 
 ---
 
-## 5. 实验设计与结果
+## 失败 case 长啥样
 
-### 5.1 数据集
+两种典型失败：
 
-#### 数据集详情
+**1. 极度复杂场景**（Figure E）：objects 太密集、bounding boxes 重叠严重，voxelization 表达不清，model 就懵了。这反映了 indoor scene 比 outdoor scene 密度大的本质难度。
 
-| 数据集 | 类型 | 场景数 | 处理后数据 | 特点 |
-|--------|------|--------|------------|------|
-| **ScanNet++** [71] | 真实世界 | 450+ | 体素化 (0.2m) | 复杂场景 |
-| **HyperSim** [49] | 合成数据 | 461 | ~24k 对 | 高质量 |
-
-#### 数据处理流程
-
-```python
-# HyperSim 数据处理
-def process_hyper_sim():
-    """
-    HyperSim 数据处理流程
-    """
-    # 原始数据
-    original_scenes = 461
-    original_images = 77400
-    with_images = True
-    with_cameras = True
-    with_bounding_boxes = True
-    
-    # 质量过滤
-    filtered_scenes = filter_by_quality(original_scenes)
-    # 过滤条件：
-    # - 避免极端复杂的形状
-    # - 避免无界室外空间
-    # - 避免过大尺度的房间
-    
-    # 结果
-    final_scenes = original_scenes // 2  # 约一半
-    final_images = 24000  # 约 24k 对
-    
-    return final_scenes, final_images
-
-# ScanNet++ 处理
-def process_scannet_pp():
-    """
-    ScanNet++ 数据处理流程
-    """
-    # 体素化
-    voxel_size = 0.2  # 米
-    
-    # 渲染优化
-    ray_tracer = Ray_OBB()  # Ray-OBB 模型
-    
-    # 权衡
-    # - 渲染成本
-    # - 数据质量
-    
-    return voxels, ray_tracer
-```
-
-### 5.2 实现细节
-
-#### 训练成本对比
-
-| 方法 | 时间 | 内存 | 视频帧数 | 硬件 |
-|------|------|------|----------|------|
-| **SceneCraft** | 3-4小时 | 6GB + 28GB | ~150 帧 | 2×A6000 |
-| **SceneCraft** | 5-6小时 | 6GB + 28GB | ~300 帧 | 2×A6000 |
-| **ShowRoom3D** [37] | ~10小时 | - | - | - |
-| **UrbanArchitect** [35] | ~12小时 | 32GB | - | - |
-
-#### Duo-GPU 训练调度
-
-```
-双 GPU 调度策略：
-┌──────────────────────────────────────────────────┐
-│  GPU 1 (主 GPU)                                 │
-│  ├─ 持续训练 Nerfacto 当前数据集                 │
-│  ├─ 内存：28GB (FP16, Nerfacto)                 │
-│  └─ 需要新图像时切换到离线渲染器                │
-├──────────────────────────────────────────────────┤
-│  GPU 2 (副 GPU)                                 │
-│  ├─ 持续生成新图像更新数据集                     │
-│  ├─ 内存：6GB (FP16, 512×768)                   │
-│  └─ 执行 SceneCraft2D 生成                      │
-└──────────────────────────────────────────────────┘
-
-优势：
-├─ 解耦扩散生成（耗时）和 NeRF 训练（快速）
-├─ 提高整体效率
-└─ 不影响质量和效率
-```
-
-### 5.3 定量评估
-
-#### 评估指标
-
-| 指标 | 类型 | 说明 | 分数范围 |
-|------|------|------|----------|
-| **CLIP Score (CS)** | 2D 指标 | 与文本提示的一致性 | 越高越好 |
-| **Inception Score (IS)** | 2D 指标 | 不依赖数据集 | 越高越好 |
-| **3D Consistency (3DC)** | 用户研究 | 3D 一致性评分 | 1-5 分 |
-| **Visual Quality (VQ)** | 用户研究 | 视觉质量评分 | 1-5 分 |
-
-#### 定量结果
-
-| Method | CS ↑ | IS ↑ | 3DC ↑ | VQ ↑ |
-|--------|------|------|-------|------|
-| **Text2Room** [24] | 22.98 | 4.20 | 3.11 | 3.06 |
-| **MVDiffusion** [60] | 23.85 | 4.36 | 3.20 | 3.35 |
-| **Set-the-scene** [12] | 21.32 | 2.98 | 3.53 | 2.41 |
-| **SceneCraft (Ours)** | **24.34** | **3.54** | **3.71** | **3.56** |
-
-**分析：**
-
-1. **CLIP Score**：SceneCraft 最高（24.34），说明与文本提示最一致
-2. **3D Consistency**：SceneCraft 最高（3.71），证明几何一致性最佳
-3. **Visual Quality**：SceneCraft 最高（3.56），视觉质量最好
-4. **Inception Score**：低于 MVDiffusion，但有合理解释
-
-```python
-# IS 分数解读
-def interpre_is_score(our_score, baseline_scores):
-    """
-    解释 IS 分数较低的原因
-    """
-    explanation = """
-    SceneCraft 的 IS 分数低于 MVDiffusion（3.54 vs 4.36），
-    但这不是主要缺陷，原因：
-    
-    1. 由于微调采用固定类别，限制了生成多样性
-    2. 但这不是主要问题，因为：
-       - 之前的方法难以同时实现高一致性和视觉质量
-       - 布局提示控制本身就会限制多样性
-    3. 重点不是多样性，而是：
-       - 高 3D 一致性（3DC: 3.71，最高）
-       - 高视觉质量（VQ: 3.56，最高）
-       - 准确遵循布局条件
-    """
-    return explanation
-
-# 总体评价：
-# - CLIP Score：最高，文本一致性最好
-# - 3DC：最高，3D 一致性最好
-# - VQ：最高，视觉质量最好
-# - 总体：SceneCraft 在关键指标上表现最佳
-```
-
-### 5.4 定性比较
-
-#### 与基线方法比较
-
-| 方法 | 优势 | 劣势 | 适用场景 |
-|------|------|------|----------|
-| **MVDiffusion** [60] | 全景生成 | 无法处理复杂形状 | 单一简单房间 |
-| **Text2Room** [24] | 自由相机轨迹 | 迭代导致不一致 | 简单场景 |
-| **Set-the-scene** [12] | NeRF 组合 | 尺寸差异限制 | 简单物体组合 |
-| **SceneCraft** | 复杂布局 + 自由相机 | IS 稍低 | 复杂多房间场景 |
-
-#### 具体比较案例
-
-**案例1：卧室布局**
-
-```
-场景：卧室布局 + 提示 "bedroom"
-
-方法结果对比：
-
-MVDiffusion：
-- ❌ 无法处理复杂形状
-- ❌ 用提示描述布局失败
-
-Text2Room：
-- ❌ 生成了 4 张床（因提示包含"bedroom"）
-- ❌ 完全无法遵循布局条件
-
-Set-the-scene：
-- ❌ 无法生成墙上物体（如百叶窗、电视）
-- ❌ 尺寸差异限制
-
-SceneCraft：
-- ✅ 准确遵循布局条件
-- ✅ 支持复杂几何
-- ✅ 生成墙上物体
-- ✅ 各种尺寸对象
-```
-
-**案例2：复杂场景**
-
-```
-场景：L 形/S 形房间 + 自由相机轨迹
-
-全景方法（MVDiffusion）：
-- ❌ 限制：只能生成全景视图
-- ❌ 无法：L 形/S 形复杂形状场景
-- ❌ 轨迹受限
-
-修补方法（Text2Room）：
-- ❌ 支持：自由相机轨迹
-- ❌ 问题：迭代生成导致不一致
-- ❌ 几何：难以建立合理的场景几何
-
-SceneCraft：
-- ✅ 支持：任意相机轨迹
-- ✅ 复杂度：多房间不规则形状
-- ✅ 几何：保持合理的场景几何
-- ✅ 一致性：3D 一致的多视图生成
-```
-
-### 5.5 消融研究
-
-#### 消融1：基础提示效果
-
-```
-设计：测试不同提示设置
-
-设置1：基础提示（SceneCraft）
-- Base prompt: "This is one view of a room."
-- User prompt: 具体目标提示
-
-设置2：BLIP2 标题
-- Caption: BLIP2 生成的图像标题
-- User prompt: 具体目标提示
-
-结果：
-
-基础提示：
-- ✅ 成功控制生成风格
-- ✅ 保持良好的布局遵循能力
-- ✅ 避免过度拟合
-
-BLIP2 标题：
-- ❌ 控制失败
-- ❌ 布局遵循能力差
-- ❌ 过度拟合特定描述
-
-结论：
-- 越复杂的条件，提示应该越通用
-- 避免条件冲突
-- 保持预训练模型能力
-```
-
-#### 消融2：布局感知深度约束
-
-```
-设计：验证深度约束的有效性
-
-设置1：无深度约束
-- 不使用 ℒ_depth
-
-设置2：有深度约束
-- 使用 ℒ_depth
-
-结果：
-
-无深度约束：
-- ❌ 完全无法学习正确的场景几何
-- ⚠️ 虽然实现合理外观（由于灵活相机轨迹）
-- ❌ 几何完全错误
-
-有深度约束：
-- ✅ 场景几何快速收敛到真实值
-- ✅ 初期迅速获得粗略几何
-- ✅ 后期学习细粒度细节
-- ❌ 初期某些区域位置错误（但后期修正）
-
-结论：
-- 深度约束对几何学习至关重要
-- 分阶段策略效果最佳
-```
-
-#### 消融3：纹理整合
-
-```
-设计：验证纹理整合的效果
-
-设置1：无纹理整合
-- Loss = 潜在空间损失 + RGB 损失
-- 类似传统 SDS 方法
-
-设置2：有纹理整合
-- Loss = 潜在空间损失 + RGB 损失 + 感知损失 + 风格损失
-
-结果：
-
-无纹理整合：
-- ❌ 无法捕获场景的高频信息
-- ❌ 生成的场景非常模糊
-- ❌ 缺乏清晰纹理
-
-有纹理整合：
-- ✅ 生成更详细、有纹理的结果
-- ✅ 语义和风格一致
-- ✅ 避免模糊问题
-
-结论：
-- 纹理整合对高质量生成至关重要
-- 感知损失 + 风格损失效果显著
-```
+**2. Layout 和 prompt 对不上**（Figure F）：明明是 bedroom layout，你给个 "kitchen" prompt，model 就精神分裂。这是个隐含 constraint，需要用户自己注意，或者未来用 LLM 做 consistency check。
 
 ---
 
-## 6. 技术细节分析
+## 跟 trend 的关系
 
-### 6.1 BBS 体素化策略
+这个工作代表了几个明确 trend：
 
-#### 两种 BBS 方法
-
-```
-方法1：原始 3D 边界框
-├─ 直接使用原始边界框（轴对齐或方向性）
-├─ 渲染到 2D 图像
-├─ 简单直接
-└─ 足够用于 HyperSim 实验
-
-方法2：体素化边界框（用于 ScanNet++）
-├─ 将边界框体素化为更小的精细体素集合
-├─ 优点：更好地捕捉复杂几何和排列
-├─ 适用场景：
-│   - L 形桌子
-│   - S 形书桌
-│   - 复杂形状物体
-└─ 显著提高表示和理解能力
-
-体素化参数：
-├─ 单元大小：0.2m（ScanNet++）
-├─ 遍历成本与数据质量权衡
-└─ 更复杂的复杂几何表示
-```
-
-#### 体素化效果展示
-
-**场景：扫描的复杂房间布局**
-
-| 无体素化 | 有体素化 |
-|----------|----------|
-| 简单边界框表示 | 精细体素集合 |
-| 无法表示复杂形状 | 准确表示 L/S 形物体 |
-| 生成几何不准确 | 几何准确跟随布局 |
-
-### 6.2 控制网络架构
-
-#### 双 ControlNet 设计
-
-```
-SceneCraft2D 控制网络：
-
-输入 BBI：
-├─ 语义图（类别 one-hot）
-│   └─ → ControlNet_semantic
-└─ 深度图（BBS 深度）
-    └─ → ControlNet_depth
-
-处理流程：
-┌─────────────────────────────────────────────┐
-│  语义路径                                   │
-│  ├─ 语义图 → one-hot 编码                   │
-│  ├─ ControlNet_semantic 条件注入             │
-│  └─ 指导语义一致生成                        │
-├─────────────────────────────────────────────┤
-│  深度路径                                   │
-│  ├─ 深度图 → 归一化处理                     │
-│  ├─ ControlNet_depth 条件注入                │
-│  └─ 指导几何一致生成                        │
-├─────────────────────────────────────────────┤
-│  主干网络                                   │
-│  ├─ Stable Diffusion UNet                   │
-│  ├─ 文本条件（CLIP 文本编码）                │
-│  └─ 结合语义和深度条件                       │
-└─────────────────────────────────────────────┘
-
-优势：
-├─ 分离语义和几何控制
-├─ 更精确的条件引导
-└─ 避免条件冲突
-```
-
-### 6.3 蒸馏管道详细流程
-
-#### 步骤化算法
-
-```python
-# 蒸馏算法伪代码
-def distillation_pipeline():
-    """
-    SceneCraft 蒸馏管道
-    """
-    # 初始化
-    scene_representation = initialize_nerfacto()
-    multi_view_dataset = load_initial_dataset()
-    
-    # 迭代过程
-    for iteration in range(total_iterations):
-        
-        # 阶段 1：训练场景表示
-        for views in multi_view_dataset:
-            # 渲染当前视图
-            rendered_images = scene_representation.render(views)
-            
-            # 计算损失
-            loss = compute_loss(rendered_images, views)
-            
-            # 应用布局感知深度约束（如果需要）
-            if iteration < depth_constraint_end:
-                depth_loss = compute_depth_loss(
-                    scene_representation.depth,
-                    multi_view_dataset.depth_layout
-                )
-                loss += depth_weight * depth_loss
-            
-            # 应用纹理整合损失
-            perceptual_loss = compute_perceptual_loss(
-                rendered_images,
-                multi_view_dataset.generated_images
-            )
-            style_loss = compute_style_loss(
-                rendered_images,
-                multi_view_dataset.generated_images
-            )
-            loss += λ_perceptual * perceptual_loss
-            loss += λ_style * style_loss
-            
-            # 更新场景表示
-            scene_representation.update(loss)
-        
-        # 阶段 2：更新多视图数据集
-        for views in camera_trajectory:
-            # 渲染 BBI
-            bbi = render_bbs_to_bbi(views)
-            
-            # 应用退火策略
-            noise_level = annealing_schedule(iteration)
-            
-            # 生成新图像
-            new_images = SceneCraft2D.generate(
-                condition=bbi,
-                prompt=user_prompt,
-                noise_level=noise_level
-            )
-            
-            # 替换数据集中的图像
-            multi_view_dataset.replace_image(views, new_images)
-        
-        # 阶段 3：周期性迁移
-        if iteration > early_stage_start:
-            dual_migration_step(iteration)
-    
-    return scene_representation
-
-def dual_migration_step(iteration):
-    """
-    双表示迁移步骤
-    """
-    # 迁移间隔检查
-    if iteration % migration_interval == 0:
-        # 同步信息
-        S_fine.update_from(S_coarse)
-    
-    # 用相似图像监督 S_fine
-    refined_images = generate_similar_images(
-        base=S_coarse.render(),
-        noise_level=compute_noise_level(iteration)
-    )
-    
-    # 训练 S_fine
-    S_fine.train(supervised_by=refined_images)
-```
+1. **SDS gradient → dataset replacement**：vanilla SDS 有 oversaturation、mode seeking 问题，IN2N-style 更 stable
+2. **Panorama constraint → free camera**：从 8 view 360 度解放出来，支持 multi-room
+3. **Object composition → holistic scene**：从拼几个 NeRF 物体到整体 scene generation
+4. **Pixel loss → perceptual loss**：generative distillation 用 perceptual 避免 blur
 
 ---
 
-## 7. 更多生成结果
+## 我觉得最值得 internalize 的几个 idea
 
-### 7.1 不规则形状场景生成
+1. **Train-inference prompt decoupling**：训练 minimal prompt 保 generative power，推理 rich prompt 注入 style。这个 idea 可以泛化到很多 conditional generation 任务
 
-```
-图5结果分析：
+2. **Staged loss scheduling**：early stage 用 strong prior constraint 快速收敛，late stage 关掉让 model refine。这种 coarse-to-fine 的 loss schedule 很通用
 
-场景 A：卧室 + 客厅连接
-├─ 自定义室内布局输入
-├─ 卧室连接客厅
-├─ 对应的任意相机轨迹
-└─ SceneCraft 成功生成
+3. **Soft reset via dual representation**：当 artifact 难以原位修复（density condensed），起一个新 representation，把旧的当 anchor。这个思路可以推广到 4D generation、image-to-3D refinement 等
 
-场景 B-D：复杂室内房间系统
-├─ 多个互连小房间组成
-├─ 完全自定义布局
-├─ 任意相机轨迹
-└─ 突破之前方法的限制
+4. **Perceptual over pixel-wise in distillation**：generative distillation 必然有 multi-view inconsistency，pixel loss 会 blur，feature space 对齐保 sharp
 
-对比全景方法：
-├─ 全景方法 [60]：
-│   └─ ❌ 限制：只能生成全景视图
-│   └─ ❌ 无法：L 形/S 形复杂形状
-│   └─ ❌ 轨迹受限
-├─ SceneCraft：
-    └─ ✅ 支持：任意相机轨迹
-    └─ ✅ 复杂度：多房间不规则形状
-    └─ ✅ 一致性：3D 一致的多视图生成
-```
-
-### 7.2 风格变体生成
-
-```
-图7结果分析：
-
-设置：
-- 相同的房间布局
-- 不同的外观提示
-
-变体 A：
-├─ 布局：相同
-├─ 提示："This is one view of a [style A] room."
-├─ 结果：风格 A 的房间
-
-变体 B：
-├─ 布局：相同
-├─ 提示："This is one view of a [style B] room."
-├─ 结果：风格 B 的房间
-
-变体 C：
-├─ 布局：相同
-├─ 提示："This is one view of a [style C] room."
-├─ 结果：风格 C 的房间
-
-结果说明：
-✅ 保持几何不变
-✅ 通过提示精确控制外观
-✅ 展示多样化的控制能力
-✅ 可以准确定义生成场景的形状和外观
-```
+5. **Parallel decoupling**：diffusion generation（慢）和 NeRF training（快）用 dual-GPU 解耦，这是工程上的 smart move
 
 ---
 
-## 8. 局限性与未来方向
+## 可能的延伸联想
 
-### 8.1 失败案例分析
-
-#### 案例1：极度复杂的场景
-
-```
-问题描述：
-- 布局过于复杂
-- 许多紧密放置的对象
-- 高度重叠的边界框
-
-失败原因：
-├─ 体素化方法无法提供清晰准确的对象布局表示
-├─ 反映室内和室外（街景）场景的区别
-│   - 室内：密集对象，细粒度类别
-│   - 室外：稀疏对象，类别较少
-└─ 布局推理能力有限
-
-解决方向：
-├─ 改进布局表示方法
-├─ 增强布局推理能力
-├─ 更精细的体素化
-└─ 分层布局表示
-```
-
-#### 案例2：布局与提示不匹配
-
-```
-问题描述：
-- 提示与实际房间布局不匹配
-
-示例：
-├─ 布局：卧室
-├─ 提示："Kitchen"
-└─ 结果：无法生成合适的房间内容或收敛差
-
-失败原因：
-├─ 布局约束与提示约束冲突
-├─ 模型被迫满足矛盾条件
-└─ 用户需要调整提示与布局
-
-解决方向：
-├─ 自动提示生成与布局匹配
-├─ 约束冲突检测
-├─ 集成 LLM 提示优化
-└─ 多模态一致性检查
-```
-
-### 8.2 图像质量限制
-
-```
-当前限制：
-├─ 生成 3D 场景质量需要改进
-├─ 挑战性对象处理：模糊
-│   - 空心椅子
-│   - 灯具
-│   - 百叶窗
-└─ 布局条件限制提示控制能力
-
-原因：
-├─ 不规则几何处理困难
-├─ 从 2D 引导学习细粒度细节难
-├─ 布局约束与提示冲突
-
-改进方向：
-├─ 提高 2D 生成质量
-├─ 改进 3D 表示学习
-├─ 增强布局感知能力
-└─ 提示-布局一致性机制
-```
-
-### 8.3 扩展到室外场景
-
-```
-室内 vs 室外场景区别：
-
-室内场景：
-├─ 挑战：
-│   - 密集对象布局
-│   - 复杂布局
-│   - 细粒度类别
-├─ 优势：
-│   - 较小尺度
-│   - 相对静态
-└─ SceneCraft 已经处理
-
-室外场景：
-├─ 挑战：
-│   - 更大空间覆盖
-│   - 动态对象
-│   - 更复杂环境
-│   - 稀疏对象
-├─ 优势：
-│   - 类别较少
-│   - 对象非重叠
-│   - 可预测相机轨迹
-└─ 需要新方法
-
-室外场景生成挑战：
-├─ 空间尺度更大
-├─ 动态对象处理
-├─ 环境复杂性
-├─ 稀疏布局表示
-├─ 远距离渲染
-└─ 照明条件变化
-
-未来方向：
-├─ 设计室外场景专用方法
-├─ 处理动态对象
-├─ 大尺度场景表示
-└─ 环境感知生成
-```
-
-### 8.4 其他未来方向
-
-#### 8.4.1 评估指标改进
-
-```
-当前评估挑战：
-├─ 缺乏公平准确的全面指标
-├─ 3D 场景生成评估困难
-├─ 多维度评估需求：
-│   - 几何质量
-│   - 纹理质量
-│   - 语义一致性
-│   - 布局遵从性
-│   - 3D 一致性
-└─ 主观评估成本高
-
-改进方向：
-├─ 开发全面的 3D 生成指标
-├─ 自动化几何评估
-├─ 纹理质量指标
-├─ 语义一致性度量
-└─ 多维度综合评估
-```
-
-#### 8.4.2 灵活可控的场景编辑
-
-```
-当前能力：
-├─ 布局输入自由定义
-├─ 可调整布局
-└─ 基于布局的生成
-
-未来能力：
-├─ 分解 3D 表示
-├─ 精粒度场景编辑
-├─ 对象级别编辑
-├─ 属性级别修改
-└─ 交互式编辑界面
-
-应用场景：
-├─ 建筑设计
-├─ 室内设计
-├─ 游戏开发
-└─ VR/AR 内容创作
-```
-
-#### 8.4.3 自动布局生成
-
-```
-当前限制：
-├─ 手工创建布局耗时
-├─ 复杂场景创建困难
-├─ 需要用户专业知识
-
-自动化方向：
-├─ LLM 驱布局生成
-├─ Transformer 布局建议
-├─ 从文本自动生成布局
-├─ 用户反馈循环
-└─ 迭代改进
-
-实现方法：
-├─ 集成 LLM：
-│   - 文本 → 布局转换
-│   - 自然语言交互
-│   - 智能布局建议
-├─ Transformer 方法：
-│   - 布局序列化
-│   - 上下文感知生成
-│   - 风格一致性
-└─ 混合方法：
-    - 结合多种技术
-    - 多模态生成
-```
-
-#### 8.4.4 用户反馈集成
-
-```
-当前局限：
-├─ 一次性生成
-├─ 缺少用户交互
-├─ 无迭代改进
-
-未来改进：
-├─ 用户反馈循环
-├─ 迭代场景细化
-├─ 实时交互生成
-├─ 多轮对话生成
-└─ 个性化定制
-
-实现技术：
-├─ 在线学习
-├─ 偏好建模
-├─ 交互式优化
-└─ 自适应生成
-```
+- 把 NeRF 换成 3D Gaussian Splatting，paper 自己说"any representation can be used"，Gaussian Splatting 渲染更快、编辑更方便
+- BBS 的 voxel size 0.2m 是 trade-off，更细 voxel 能表达更复杂 geometry 但渲染成本暴涨
+- SceneCraft2D 是 per-view 独立 generate，跨 view consistency 全靠 NeRF distillation 涌现。如果加 explicit multi-view consistency（像 MVDiffusion++ 那种），可能进一步提升
+- LLM 自动从 text 生成 BBS 是 obvious next step，让整个 pipeline 从纯 text 出发
+- Outdoor scene generation 是另一个方向，indoor dense + outdoor large space 的挑战不一样
+- 把 BBS 换成更细的 occupancy grid 或者 sparse voxel，逼近真实 shape prior
 
 ---
 
-## 9. 社会影响与伦理考虑
+## 我的整体评价
 
-### 9.1 积极影响
+这个工作 **engineering-heavy 但 insight 清晰**。核心 insight 就是"3D layout → 2D condition → 2D generation → 3D distillation"这条 pipeline，每一环都有相应的 technical innovation 支撑。
 
-```
-应用领域：
-├─ VR/AR：
-│   - 快速生成虚拟环境
-│   - 降低开发成本
-│   - 提高用户体验
-├─ 建筑设计：
-│   - 快速原型设计
-│   - 客户展示
-│   - 设计迭代
-├─ 游戏开发：
-│   - 自动生成场景
-│   - 加速开发流程
-│   - 降低门槛
-└─ Embodied AI：
-    - 训练环境生成
-    - 场景多样性
-    - 研究工具
+不是那种一个 big idea 通吃的工作，而是把 5-6 个 trick 组合起来，每个 trick 解决一个具体问题。但组合得很有逻辑，不是 trick 堆砌。
 
-社会价值：
-├─ 降低 3D 内容创建门槛
-├─ 促进创意表达
-├─ 提高可访问性
-└─ 推动创新应用
-```
+Limitations 也清楚：image quality 还有提升空间（irregular geometry 物体仍 blurry），layout-prompt alignment 是 hidden constraint。这些 limitations 本身就是很好的 future work direction。
 
-### 9.2 潜在负面影响
-
-```
-间接潜在影响：
-├─ 数字内容滥用
-├─ 深度伪造场景
-├─ 虚假环境生成
-└─ 版权和商标问题
-
-Mitigation Strategies：
-├─ 建立使用指南
-├─ 开发检测工具
-├─ 水印技术
-├─ 法律框架
-└─ 伦理审查
-
-责任研究方向：
-├─ 识别滥用模式
-├─ 开发检测方法
-├─ 制定伦理准则
-└─ 促进负责任使用
-```
+对 build intuition 来说，这个 paper 最大的价值在于展示了**怎么把一个硬问题分解成 tractable 子问题，再用 distillation 把 2D 能力"拉"回 3D**。这个 pattern 在 generative AI 里会越来越常见。
 
 ---
 
-## 10. 数据集许可
+## Key References
 
-### 10.1 数据集许可信息
-
-| 数据集 | 许可类型 | 许可链接 |
-|--------|----------|----------|
-| **ScanNet++** [71] | ScanNet++ Terms of Use | https://kaldir.vc.in.tum.de/scannetpp/static/scannetpp-terms-of-use.pdf |
-| **HyperSim** [49] | Creative Commons Attribution-ShareAlike 3.0 Unported | CC BY-SA 3.0 |
-
-### 10.2 基础模型数据集
-
-论文使用以下预训练基础模型：
-
-| 模型 | 原始论文 | 数据集许可 |
-|------|----------|------------|
-| **Stable Diffusion** [50] | [50] Rombach et al. | 见论文 [50] |
-| **ControlNet** [75] | [75] Zhang et al. | 见论文 [75] |
-| **VGG** [25] | [25] Johnson et al. | 见论文 [25] |
-| **SDEdit** [39] | [39] Meng et al. | 见论文 [39] |
-
----
-
-## 11. 技术总结
-
-### 11.1 核心技术贡献
-
-```
-技术贡献总结：
-
-1. 布局引导 3D 场景生成框架
-   ├─ 首个支持自由多视图轨迹
-   ├─ 不受全景约束
-   ├─ 支持复杂多房间场景
-   └─ 3D 一致性保证
-
-2. 边界框场景 (BBS) 表示
-   ├─ 用户友好的布局格式
-   ├─ 类似 Minecraft 建造
-   ├─ 精确几何控制
-   └─ 支持复杂自由形布局
-
-3. SceneCraft2D 扩散模型
-   ├─ 高质量布局引导图像生成
-   ├─ 双 ControlNet 条件注入
-   ├─ 语义和深度条件
-   └─ 多风格支持
-
-4. 蒸馏引导生成方法
-   ├─ IN2N 风格管道
-   ├─ 退火策略
-   ├─ 布局感知深度约束
-   ├─ 周期性迁移
-   └─ 纹理整合
-
-5. 实验验证
-   ├─ 定量评估最佳性能
-   ├─ 定性比较超越基线
-   ├─ 复杂场景生成演示
-   └─ 风格变体控制能力
-```
-
-### 11.2 关键技术公式汇总
-
-```
-公式汇总：
-
-1. 深度约束损失：
-   ℒ_depth = [max(||D_render - D_layout|| - δ, 0)]²
-   - D_render: 场景表示渲染深度
-   - D_layout: BBS 输入伪真值深度
-   - δ: 软阈值
-
-2. 退火调度：
-   similarity_threshold = compute_threshold(iteration, total_iterations)
-   - 控制生成图像与当前场景的相似度
-   - 早期：自由生成
-   - 后期：细化生成
-
-3. 纹理整合损失：
-   ℒ_texture = λ_perceptual * L1(VGG(render), VGG(generated)) + 
-                λ_style * L1(gram_matrix(VGG(render)), 
-                              gram_matrix(VGG(generated)))
-   - 感知损失：语义一致性
-   - 风格损失：风格一致性
-
-4. 布局感知深度约束：
-   if iteration < depth_constraint_end:
-       apply_depth_loss = True
-   else:
-       apply_depth_loss = False
-   - 初期：快速收敛到粗略几何
-   - 后期：学习细粒度细节
-```
-
-### 11.3 架构创新点
-
-```
-架构创新：
-
-传统方法局限性：
-├─ 全景依赖：视图受限
-├─ 迭代生成： inconsistency
-├─ 缺乏布局：控制不足
-├─ 尺寸限制：难以处理大场景
-
-SceneCraft 创新：
-├─ 无全景约束：
-│   - 自由相机轨迹
-│   - 复杂布局支持
-│   - 多房间场景
-
-├─ 蒸馏框架：
-│   - 高质量 2D 生成
-│   - 3D 一致性保证
-│   - 退火策略
-│   - 周期性迁移
-
-├─ 布局感知：
-│   - BBS 表示
-│   - 深度约束
-│   - 精确几何控制
-
-├─ 纹理质量：
-│   - 感知损失
-│   - 风格损失
-│   - 高质量纹理
-
-└─ 多风格支持：
-    - 文本条件生成
-    - 风格多样性
-```
+- SceneCraft 主页：https://orangesodahub.github.io/SceneCraft
+- Stable Diffusion：https://arxiv.org/abs/2112.10752
+- ControlNet：https://arxiv.org/abs/2302.05543
+- NeRF：https://arxiv.org/abs/2003.08934
+- Nerfacto/NeRFStudio：https://arxiv.org/abs/2302.04264
+- Instruct-NeRF2NeRF：https://arxiv.org/abs/2303.12789
+- HiFA：https://arxiv.org/abs/2311.11679
+- SDEdit：https://arxiv.org/abs/2108.01073
+- DreamFusion (SDS)：https://arxiv.org/abs/2209.14988
+- Text2Room：https://arxiv.org/abs/2303.11989
+- MVDiffusion：https://arxiv.org/abs/2307.01097
+- ControlRoom3D：https://arxiv.org/abs/2311.15637
+- ScanNet++：https://arxiv.org/abs/2308.11417
+- Hypersim：https://arxiv.org/abs/2011.02523
+- VGG Perceptual Loss：https://arxiv.org/abs/1603.08155
+- 3D Gaussian Splatting：https://arxiv.org/abs/2308.14737
 
 ---
 
-## 12. 与相关工作对比
+# SceneCraft: Layout-Guided 3D Scene Generation 深度解析
 
-### 12.1 技术路线对比
+## 1. High-Level Intuition
 
-| 类别 | 方法 | 布局控制 | 视图限制 | 复杂场景 | 3D 一致性 |
-|------|------|----------|----------|----------|-----------|
-| **Text-to-3D** | DreamFusion [46] | ❌ | ✅ | ❌ | ✅ |
-| | Magic3D [31] | ❌ | ✅ | ❌ | ✅ |
-| **全景方法** | MVDiffusion [60] | ❌ | ❌ | ❌ | ✅ |
-| **修补方法** | Text2Room [24] | ❌ | ✅ | ⚠️ | ❌ |
-| | SceneScape [17] | ❌ | ✅ | ⚠️ | ❌ |
-| **布局方法** | ControlRoom3D [53] | ✅ | ❌ | ⚠️ | ✅ |
-| | Ctrl-Room [16] | ✅ | ❌ | ⚠️ | ✅ |
-| | Set-the-scene [12] | ✅ | ✅ | ❌ | ✅ |
-| **SceneCraft** | Proposed | ✅ | ✅ | ✅ | ✅ |
+这篇 paper 解决的核心问题是：**如何从 text description + 3D spatial layout 生成高质量、3D-consistent 的复杂室内场景**。
 
-### 12.2 性能对比
+关键 insight 在于：把一个 hard 3D 问题分解成 tractable 2D 问题，再用 distillation 把 2D 能力"蒸馏"回 3D。具体来说，作者设计了一个 **Bounding-Box Scene (BBS)** 作为 user-friendly 的 layout interface，把它 render 成 2D 的 **Bounding-Box Image (BBI)**，用 BBI 作为 condition 训练一个 2D diffusion model (SceneCraft2D)，最后用 SDS-equivalent 的 distillation pipeline 把多视图 2D 图像聚合成 NeRF scene representation。
 
-#### 定量指标对比（Table 1 详解）
+这个思路的优雅之处在于：**layout 是 3D 的（用户友好、几何精确），generation 是 2D 的（利用强大的 pretrained 2D diffusion），最终 representation 又是 3D 的（NeRF）**。三个世界的 best of all。
 
-```
-详细性能分析：
-
-CLIP Score (CS):
-├─ Text2Room: 22.98 (最低)
-├─ MVDiffusion: 23.85 (中等)
-├─ Set-the-scene: 21.32 (次低)
-└─ SceneCraft: 24.34 (最高)
-  └─ 比第二高 MVDiffusion 提升 2.06%
-
-Inception Score (IS):
-├─ MVDiffusion: 4.36 (最高)
-├─ Text2Room: 4.20 (次高)
-├─ SceneCraft: 3.54 (第三)
-└─ Set-the-scene: 2.98 (最低)
-  └─ 注意：SceneCraft 的 IS 较低有合理解释
-
-3D Consistency (3DC):
-├─ SceneCraft: 3.71 (最高)
-├─ Set-the-scene: 3.53 (次高)
-├─ MVDiffusion: 3.20 (第三)
-└─ Text2Room: 3.11 (最低)
-  └─ SceneCraft 比第二高提升 5.1%
-
-Visual Quality (VQ):
-├─ SceneCraft: 3.56 (最高)
-├─ MVDiffusion: 3.35 (次高)
-├─ Text2Room: 3.06 (第三)
-└─ Set-the-scene: 2.41 (最低)
-  └─ SceneCraft 比第二高提升 6.3%
-
-综合评价：
-✅ CLIP Score: 最高
-✅ 3D Consistency: 最高
-✅ Visual Quality: 最高
-⚠️ Inception Score: 第三（但有合理解释）
-```
-
-#### 定性对比（Figure 4 详解）
-
-```
-场景1：卧室布局
-
-Text2Room:
-├─ ❌ 生成4张床（提示"bedroom"重复触发）
-├─ ❌ 完全无法遵循布局条件
-├─ ⚠️ 迭代生成导致不一致
-└─ 评分：布局遵循性差
-
-MVDiffusion:
-├─ ❌ 无法处理复杂形状
-├─ ⚠️ 用提示描述布局失败
-├─ 🔒 受全景视图限制
-└─ 评分：几何形状差
-
-Set-the-scene:
-├─ ❌ 无法生成墙上物体（百叶窗、电视）
-├─ ❌ 尺寸差异限制
-├─ ⚠️ NeRF 组合局限
-└─ 评分：对象类型受限
-
-SceneCraft:
-├─ ✅ 准确遵循布局条件
-├─ ✅ 支持复杂几何
-├─ ✅ 生成墙上物体
-├─ ✅ 各种尺寸对象
-└─ 评分：整体最佳
-```
-
-### 12.3 语义布局生成方法对比
-
-#### 三种并发工作对比
-
-| 方面 | ControlRoom3D [53] | Ctrl-Room [16] | UrbanArchitect [35] | SceneCraft |
-|------|-------------------|---------------|-------------------|------------|
-| **布局表示** | Proxy Room | 布局估计 | 语义布局 | BBS (边界框) |
-| **场景类型** | 室内 | 室内 | 室外街景 | 室内 |
-| **视图限制** | 全景依赖 | 全景依赖 | 街景轨迹 | 自由轨迹 |
-| **复杂场景** | 单房间 | 单房间 | 大空间 | 多房间 |
-| **对象密度** | 密集 | 密集 | 稀疏 | 密集 |
-| **对象类别** | 细粒度 | 细粒度 | 少类别 | 细粒度 |
-| **对象重叠** | 支持 | 支持 | 不支持 | 支持 |
-| **形状复杂度** | 简单 | 简单 | 简单 | 复杂 L/S 形 |
-| **代码可用** | ❌ | ❌ | ❌ | ✅ |
+项目主页：https://orangesodahub.github.io/SceneCraft
 
 ---
 
-## 13. 实际应用指南
+## 2. 为什么这个问题难？
 
-### 13.1 使用流程
+从 paper 的 introduction 和 related work 可以提炼出几个关键 challenge：
 
-```python
-# SceneCraft 使用流程示例
-def generate_scene_with_scenecraft():
-    """
-    SceneCraft 场景生成完整示例
-    """
-    
-    # 步骤 1：准备输入
-    inputs = {
-        'prompt': 'This is one view of a bedroom in Van Gogh painting style.',
-        'bbs': define_bounding_box_scene(
-            rooms=[
-                {'type': 'bedroom', 'position': (0, 0, 0), 'size': (5, 3, 4)},
-                {'type': 'living_room', 'position': (5, 0, 0), 'size': (6, 3, 5)}
-            ],
-            objects=[
-                {'type': 'bed', 'position': (1, 0, 1), 'size': (2, 0.5, 1.8)},
-                {'type': 'desk', 'position': (3, 0, 3), 'type': 'L-shaped', 
-                 'boxes': [
-                     {'position': (3, 0, 3), 'size': (1.5, 0.8, 0.8)},
-                     {'position': (3.8, 0, 3.6), 'size': (0.5, 0.8, 1.2)}
-                 ]}
-            ]
-        ),
-        'camera_trajectory': define_camera_trajectory(
-            type='free_form',
-            keyframes=[...]
-        )
-    }
-    
-    # 步骤 2：渲染 BBI
-    bb_images = render_bbs_to_bbi(
-        bbs=inputs['bbs'],
-        camera_trajectory=inputs['camera_trajectory']
-    )
-    
-    # 步骤 3：生成 2D 图像（SceneCraft2D）
-    generated_2d_images = []
-    for view in inputs['camera_trajectory']:
-        image = SceneCraft2D.generate(
-            prompt=inputs['prompt'],
-            semantic_map=bb_images[view]['semantic'],
-            depth_map=bb_images[view]['depth']
-        )
-        generated_2d_images.append({
-            'view': view,
-            'image': image
-        })
-    
-    # 步骤 4：蒸馏到 3D 表示
-    scene_3d = distill_to_neural_radiance_field(
-        multi_view_images=generated_2d_images,
-        bbs=inputs['bbs'],
-        distillation_params={
-            'iterations': 150,
-            'depth_constraint': True,
-            'depth_constraint_end': 50,
-            'texture_consolidation': True,
-            'migration': True
-        }
-    )
-    
-    # 步骤 5：渲染最终场景
-    final_renders = []
-    for angle in range(0, 360, 10):
-        render = scene_3d.render(
-            camera_position=get_orbit_position(angle),
-            camera_orientation=get_orbit_orientation(angle)
-        )
-        final_renders.append(render)
-    
-    return {
-        'scene_3d': scene_3d,
-        'renders': final_renders,
-        'input_bbs': inputs['bbs']
-    }
-```
+### 2.1 Object-level → Scene-level 的 scaling 问题
+DreamFusion [46]、Magic3D [31]、ProlificDreamer [66] 这些 text-to-3D 方法在 object 上效果惊艳，但 scene level 需要：
+- 管理 significantly larger space
+- complicated semantics（很多类别物体共存）
+- 3D consistency across viewpoints（shape, texture, occlusion 都要一致）
 
-### 13.2 布局设计指南
+### 2.2 Previous scene-level methods 的两大缺陷
+- **Local coherence 问题**：Text2Room [24]、SceneScape [17]、Text2NeRF [75] 用 inpainting，locally 看着 OK，但 global geometry inconsistent，且无 layout control。
+- **Panorama 限制**：ControlRoom3D [53]、Ctrl-Room [16]、ShowRoom3D [37] 依赖 panorama generation [60]，这虽然简化了问题，但限制 camera viewpoint 的多样性，且无法表达 multi-room、irregular shape 的复杂 layout。
 
-```python
-# BBS 布局设计最佳实践
-def design_bbs_layout(room_type, style):
-    """
-    不同房间类型的 BBS 布局设计
-    """
-    
-    if room_type == 'bedroom':
-        bbs = {
-            'room': {
-                'type': 'bedroom',
-                'size': (5, 3, 4),  # (width, height, depth)
-                'objects': [
-                    {
-                        'type': 'bed',
-                        'position': (1, 0, 1),
-                        'size': (2, 0.5, 1.8)
-                    },
-                    {
-                        'type': 'nightstand',
-                        'position': (3.5, 0, 1),
-                        'size': (0.5, 0.5, 0.5)
-                    },
-                    {
-                        'type': 'wardrobe',
-                        'position': (0, 0, 0),
-                        'size': (1, 2.5, 0.8)
-                    },
-                    {
-                        'type': 'desk',
-                        'position': (4, 0, 3),
-                        'size': (1, 0.8, 0.6)
-                    }
-                ]
-            }
-        }
-        
-        if style == 'modern':
-            bbs['room']['objects'].append({
-                'type': 'tv',
-                'position': (2.5, 1.5, 4),
-                'size': (1.5, 0.8, 0.1),
-                'wall_mounted': True
-            })
-    
-    elif room_type == 'living-room':
-        bbs = {
-            'rooms': [
-                {
-                    'type': 'living_area',
-                    'size': (8, 3, 6),
-                    'position': (0, 0, 0),
-                    'objects': [
-                        {
-                            'type': 'sofa',
-                            'position': (1, 0, 2),
-                            'type': 'L-shaped',
-                            'boxes': [
-                                {'position': (1, 0, 2), 'size': (3, 0.8, 1)},
-                                {'position': (1, 0, 3.5), 'size': (1, 0.8, 2)}
-                            ]
-                        },
-                        {
-                            'type': 'coffee_table',
-                            'position': (3, 0, 2.5),
-                            'size': (1, 0.5, 0.6)
-                        }
-                    ]
-                },
-                {
-                    'type': 'dining_area',
-                    'size': (5, 3, 4),
-                    'position': (8, 0, 0),
-                    'objects': [
-                        {
-                            'type': 'dining_table',
-                            'position': (10, 0, 2),
-                            'size': (2, 0.8, 1)
-                        },
-                        {
-                            'type': 'chair',
-                            'count': 4,
-                            'arrangement': 'around_table'
-                        }
-                    ]
-                }
-            ]
-        }
-    
-    elif room_type == 'complex-apartment':
-        # 多房间复杂布局
-        bbs = {
-            'rooms': [
-                {
-                    'type': 'bedroom',
-                    'position': (0, 0, 0),
-                    'size': (5, 3, 4),
-                    'objects': [...]  # 卧室对象
-                },
-                {
-                    'type': 'kitchen',
-                    'position': (5, 0, 0),
-                    'size': (4, 3, 4),
-                    'objects': [...]  # 厨房对象
-                },
-                {
-                    'type': 'living_room',
-                    'position': (0, 0, 4),
-                    'size': (6, 3, 5),
-                    'objects': [...]  # 客厅对象
-                },
-                {
-                    'type': 'bathroom',
-                    'position': (6, 0, 3),
-                    'size': (3, 3, 3),
-                    'objects': [...]  # 浴室对象
-                }
-            ],
-            'connections': [
-                'bedroom <-> living_room',
-                'kitchen <-> living_room',
-                'bathroom <-> living_room'
-            ]
-        }
-    
-    return bbs
+### 2.3 Layout control 的精度问题
+Set-the-Scene [12]、CompoNeRF [32]、Compo3D [45] 用 semantic layout + SDS，但局限于 small-scale compositions of several objects，忽略 walls/doors/ceilings 这些定义 indoor scene 的关键元素。
 
-# 提示词设计
-def design_prompts(style, mood, details):
-    """
-    场景提示词设计模板
-    """
-    base_prompt = "This is one view of a"
-    
-    style_keywords = {
-        'modern': ['modern', 'contemporary', 'sleek', 'minimalist'],
-        'classic': ['classic', 'traditional', 'elegant', 'timeless'],
-        'rustic': ['rustic', 'cozy', 'warm', 'natural'],
-        'industrial': ['industrial', 'urban', 'raw', 'exposed']
-    }
-    
-    mood_keywords = {
-        'bright': ['bright', 'sunny', 'airy', 'open'],
-        'cozy': ['cozy', 'warm', 'intimate', 'inviting'],
-        'luxurious': ['luxurious', 'elegant', 'premium', 'sophisticated'],
-        'minimalist': ['minimalist', 'clean', 'simple', 'uncluttered']
-    }
-    
-    prompt = f"{base_prompt} {style} room with {mood} atmosphere."
-    
-    if details:
-        prompt += f" Featuring {details}."
-    
-    return prompt
-```
+SceneCraft 的目标就是同时解决：**complex layout + free camera trajectory + 3D consistency + text control**。
 
 ---
 
-## 14. 技术深度解析
+## 3. Method 架构深度解析
 
-### 14.1 神经辐射场 (NeRF) 表示
+整个 framework 分两阶段（Figure 2）：
+- **Stage 1**: Pre-train SceneCraft2D（2D layout-guided image generation）
+- **Stage 2**: Distill SceneCraft2D 到 scene representation（NeRF）
 
-#### Nerfacto [56] 选择原因
+### 3.1 Bounding-Box Scene (BBS)：User-Friendly Layout Interface
 
-```
-Nerfacto vs 其他表示：
+BBS 的设计哲学：**像 Minecraft 一样构建房间**。每个 object 用一个或多个 intersecting bounding box 的 union 表示，附带 category label。
 
-NeRF [41]:
-├─ 优点：
-│   - 高质量渲染
-│   - 连续场景表示
-│   - 灵活的视角合成
-└─ 缺点：
-    - 训练慢
-    - 大规模场景效率低
+关键设计选择：
+- 单个 bounding box 表达 coarse shape + category
+- 多个 bounding box 的 union 可以表达 L-shaped desk、S-shaped desk 这些 irregular geometry
+- 比 ControlRoom3D 的 "Proxy Room" 更灵活
 
-3D Gaussian Splatting [27]:
-├─ 优点：
-│   - 渲染质量高
-│   - 实时渲染
-│   - 高效率
-└─ 缺点：
-    - 表示不如 NeRF 灵活
-    - 大规模场景优化复杂
+技术实现上有两种 BBS 来源（Sec. 4）：
+1. **直接 axis-aligned / oriented 3D bounding box**：用于 Hypersim [49] 数据
+2. **Voxelized bounding box**（unit size 0.2m）：用于 ScanNet++ [72] 这种复杂真实场景，能捕捉 fine-grained geometry
 
-Nerfacto [56]:
-├─ 优点：
-│   - 高质量渲染
-│   - 处理复杂大规模场景
-│   - 高效训练
-│   - 灵活的场景表示
-└─ 选择原因：
-    - 平衡质量和效率
-    - 适合复杂室内场景
-    - 高质量渲染结果
+Rasterization 用 **Ray-OBB model**（从 Ray-AABB [26] 扩展），把 3D BBS 投影到 camera view 得到 BBI。
 
-对比：
-├─ 质量：Nerfacto ≈ NeRF > Gaussian
-├─ 效率：Gaussian > Nerfacto > NeRF
-└─ 适用性：Nerfacto 最佳
-```
+**Intuition**：BBS 是 coarse draft，BBI 是 draft 的 2D projection。这样把"3D scene generation"分解成"很多个 2D layout-conditioned image generation"任务。
 
-#### Nerfacto 架构细节
+### 3.2 SceneCraft2D：Layout-Conditioned Diffusion
 
-```
-Nerfacto 主要组件：
+#### 3.2.1 架构
+基于 **Stable Diffusion [50]**，augment 两个 ControlNet [76]：
+- ControlNet 1：semantic category map（one-hot encoded）
+- ControlNet 2：BBS depth map
 
-1. Proposal Networks:
-   ├─ 粗略射线采样
-   ├─ 快速范围估计
-   └─ 高效光线传播
+为什么用两个独立 ControlNet 而不是一个？我的猜测是 semantic 和 depth 是 **heterogeneous modalities**（一个是 discrete categorical，一个是 continuous geometric），独立 encode 让 model 各自学习合适的 representation，避免 mutual interference。
 
-2. Field Network:
-   ├─ 密度场学习
-   ├─ 颜色场学习
-   └─ 特征编码
+#### 3.2.2 Finetuning 策略（关键 insight）
 
-3. Rendering Network:
-   ├─ 体积渲染
-   ├─ 光线累积
-   └─ 高质量输出
+数据：ScanNet++ [72] + Hypersim [49]，filter 后约 24k pairs。
 
-优势：
-├─ 处理复杂场景
-├─ 高质量渲染
-├─ 高效训练
-└─ 灵活表示
-```
+**Critical design choice**：用 **base prompt** "This is one view of a room." 训练，而不是用 BLIP [29] 自动 caption。
 
-### 14.2 扩散模型与蒸馏
+为什么？我理解的原因：
+- BLIP caption 会 overfit 到 specific object/word，丢失 Stable Diffusion 的 general 能力
+- Layout 信息已经在 BBI 中 dense 表达了，prompt 不需要再描述 content
+- 留出 prompt 的 capacity 给 inference-time 的 style control
 
-#### 扩散模型原理
+Figure 6 的 ablation 直接验证：用 BLIP2 caption 训练导致 control failure，而 base prompt 保持 layout-following ability 的同时允许 style transfer。
 
-```python
-class DiffusionModel:
-    """
-    扩散模型基础原理
-    """
-    
-    def __init__(self, model, betas):
-        self.model = model
-        self.betas = betas
-        self.alphas = 1.0 - betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-    
-    def q_sample(self, x_start, t, noise=None):
-        """
-        前向扩散过程 (q)
-        从 x_start 添加噪声到 x_t
-        """
-        if noise is None:
-            noise = torch.randn_like(x_start)
-        
-        # x_t = sqrt(alpha_bar_t) * x_start + sqrt(1 - alpha_bar_t) * noise
-        sqrt_alphas_cumprod_t = extract(self.alphas_cumprod, t, x_start.shape)
-        sqrt_one_minus_alphas_cumprod_t = extract(
-            1.0 - self.alphas_cumprod, t, x_start.shape
-        )
-        
-        return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
-    
-    def p_losses(self, x_start, t, noise=None):
-        """
-        计算扩散模型损失
-        """
-        if noise is None:
-            noise = torch.randn_like(x_start)
-        
-        # 前向过程：添加噪声
-        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
-        
-        # 预测噪声
-        predicted_noise = self.model(x_noisy, t)
-        
-        # 损失：预测噪声与真实噪声的 MSE
-        loss = F.mse_loss(predicted_noise, noise)
-        
-        return loss
-    
-    def p_sample(self, x, t):
-        """
-        反向扩散过程 (p)
-        从 x_t 去除噪声到 x_{t-1}
-        """
-        # 预测噪声
-        predicted_noise = self.model(x, t)
-        
-        # 计算均值
-        alpha_t = extract(self.alphas, t, x.shape)
-        alpha_cumprod_t = extract(self.alphas_cumprod, t, x.shape)
-        beta_t = extract(self.betas, t, x.shape)
-        
-        # 均值计算
-        mean = (1.0 / torch.sqrt(alpha_t)) * (
-            x - beta_t / torch.sqrt(1.0 - alpha_cumprod_t) * predicted_noise
-        )
-        
-        # 添加噪声（除非 t=0）
-        if t[0] != 0:
-            noise = torch.randn_like(x)
-            posterior_variance_t = extract(
-                betas * (1.0 - self.alphas_cumprod_prev) / 
-                (1.0 - self.alphas_cumprod), t, x.shape
-            )
-            sample = mean + torch.sqrt(posterior_variance_t) * noise
-        else:
-            sample = mean
-        
-        return sample
+Inference 时换成 specific prompt like "This is one view of a bedroom in Van Gogh painting style."，实现 style control。
 
-# SceneCraft2D 集成 ControlNet
-class SceneCraft2D(DiffusionModel):
-    def __init__(self, base_model, controlnet_semantic, controlnet_depth):
-        self.base_model = base_model
-        self.controlnet_semantic = controlnet_semantic
-        self.controlnet_depth = controlnet_depth
-    
-    def forward(self, x, t, condition):
-        """
-        带条件的扩散模型前向传播
-        """
-        # 分离条件
-        semantic_map = condition['semantic']
-        depth_map = condition['depth']
-        
-        # ControlNet 特征提取
-        semantic_features = self.controlnet_semantic(semantic_map, t)
-        depth_features = self.controlnet_depth(depth_map, t)
-        
-        # 融合特征
-        combined_features = self._combine_features(
-            self.base_model(x, t),
-            semantic_features,
-            depth_features
-        )
-        
-        return combined_features
-    
-    def generate(self, condition, prompt, num_steps=50):
-        """
-        条件图像生成
-        """
-        # 样本初始化
-        x = torch.randn(condition['size'])
-        
-        # 去噪循环
-        for t in range(num_steps-1, -1, -1):
-            # 获取模型预测
-            noise_pred = self.forward(
-                x, t, 
-                condition={
-                    'semantic': condition['semantic'],
-                    'depth': condition['depth']
-                }
-            )
-            
-            # 采样
-            x = self.p_sample(x, t, noise_pred)
-        
-        return x
-```
+这是一个很漂亮的 **train-inference decoupling**：训练时 minimal prompt 保 generative power，推理时 rich prompt 注入 style。
 
-#### SDS (Score Distillation Sampling) 原理
+**Reference**：
+- Stable Diffusion: https://arxiv.org/abs/2112.10752
+- ControlNet: https://arxiv.org/abs/2302.05543
+- BLIP: https://arxiv.org/abs/2201.12086
 
-```python
-class ScoreDistillationSampling:
-    """
-    SDS 蒸馏过程
-    原理链接：DreamFusion [46]
-    """
-    
-    def __init__(self, diffusion_model, guidance_scale=100):
-        self.diffusion_model = diffusion_model
-        self.guidance_scale = guidance_scale
-    
-    def compute_sds_loss(self, scene_representation, viewpoint, prompt, condition):
-        """
-        计算 SDS 损失
-        """
-        # 步骤 1：渲染场景
-        rendered_image = scene_representation.render(viewpoint)
-        
-        # 步骤 2：添加噪声
-        t = torch.randint(0, 1000, ())
-        noise = torch.randn_like(rendered_image)
-        noisy_image = self.diffusion_model.q_sample(
-            rendered_image, t, noise
-        )
-        
-        # 步骤 3：预测噪声（条件生成）
-        predicted_noise_cond = self.diffusion_model.model(
-            noisy_image, t,
-            condition=condition,
-            prompt=prompt
-        )
-        predicted_noise_uncond = self.diffusion_model.model(
-            noisy_image, t,
-            condition=condition,
-            prompt=""
-        )
-        
-        # 步骤 4：分类器自由引导
-        guided_noise = predicted_noise_uncond + self.guidance_scale * (
-            predicted_noise_cond - predicted_noise_uncond
-        )
-        
-        # 步骤 5：SDS 损失
-        sds_loss = torch.mean(guided_noise * noise)
-        
-        return sds_loss
+### 3.3 Distillation-Guided Scene Generation
 
-# IN2N 风格蒸馏 (SceneCraft 使用)
-class IN2NDistillation:
-    """
-    IN2N 风格蒸馏
-    原理链接：IN2N [21], HiFA [77]
-    """
-    
-    def __init__(self, scene_representation, diffusion_model):
-        self.scene_representation = scene_representation
-        self.diffusion_model = diffusion_model
-    
-    def distill(self, multi_view_dataset, num_iterations):
-        """
-        蒸馏过程
-        """
-        # �多视图数据集
-        current_dataset = multi_view_dataset
-        
-        for iteration in range(num_iterations):
-            # 阶段 1：训练场景表示
-            for view, target_image in current_dataset:
-                # 渲染当前视图
-                rendered_image = self.scene_representation.render(view)
-                
-                # 计算损失
-                loss = self.compute_loss(rendered_image, target_image)
-                
-                # 更新场景表示
-                self.scene_representation.update(loss)
-            
-            # 阶段 2：生成新图像
-            new_dataset = {}
-            for view in self.camera_trajectory:
-                # 获取条件
-                condition = self.get_bbi_condition(view)
-                
-                # 生成新图像
-                new_image = self.diffusion_model.generate(
-                    condition=condition,
-                    prompt= self.get_prompt(iteration)
-                )
-                
-                new_dataset[view] = new_image
-            
-            # 更新数据集
-            current_dataset = new_dataset
-        
-        return self.scene_representation
-```
+这是 paper 的核心技术贡献，几个 trick 叠加。
 
-### 14.3 布局感知深度约束详解
+#### 3.3.1 SDS-equivalent Pipeline (IN2N-style)
 
-#### 深度约束的数学推导
+不用 vanilla SDS [46]（latent space gradient），而用 **Instruct-NeRF2NeRF [21] 的 iterative dataset replacement** 思路，被 HiFA [78] 证明是 SDS-equivalent。
 
-```
-深度约束损失推导：
+具体做法：
+1. 维护一个 multi-view image dataset
+2. 持续训练 scene representation（NeRF）
+3. 同时 iteratively 用 SceneCraft2D 替换 dataset 中的图像
+4. Dataset 逐渐被 generated scene views 取代，NeRF 拟合到 generated scene
 
-问题：从 2D 图像引导学习 3D 场景时，需要几何指导
+**Intuition**：相比直接用 SDS gradient 在 latent space 操作，这个方法更 stable，因为 NeRF 始终用真实 RGB 图像监督，optimization landscape 更平滑。
 
-解决方案：使用 BBS 输入作为伪真值深度
+#### 3.3.2 Annealing-based Distillation
 
-公式：
-ℒ_depth = [max(||D_render - D_layout|| - δ, 0)]²
+灵感来自 SDEdit [39] 和 HiFA [78]。
 
-其中：
-- D_render: 场景表示渲染的像素深度
-- D_layout: BBS 输入的伪真值深度
-- δ: 软阈值（允许合理波动范围）
+核心 idea：用 SDEdit 控制生成图像与当前 scene 的相似度，**逐渐降低** 这个 similarity。
 
-物理意义：
-├─ ||D_render - D_layout||: 渲染深度与布局深度差异
-├─ ||D_render - D_layout|| - δ: 差异超过允许范围的部分
-├─ max(..., 0): 只惩罚超出阈值的部分
-└─ [ ]²: 平方惩罚（更平滑）
+- **Early stage**：SceneCraft2D 自由 generate（high noise level），满足 BBS + prompt，建立 room 大致结构
+- **Late stage**：low noise level，生成 similar 但 higher quality 的图像，SceneCraft2D 充当 refiner
 
-作用范围：
-├─ 当 ||D_render - D_layout|| ≤ δ：ℒ_depth = 0
-│   └─ 允许合理波动，不惩罚
-├─ 当 ||D_render - D_layout|| > δ：ℒ_depth > 0
-│   └─ 惩罚超出范围的差异
-└─ 引导快速收敛到粗略几何
+这个 annealing 让 distillation 从 coarse-to-fine 自然演进，避免 early stage 的 inconsistent 图像污染 NeRF，同时 late stage 能 refine 细节。
 
-实施策略：
-├─ 初期（iteration < 某阈值）：
-│   ├─ 启用深度约束
-│   ├─ 权重 = 1.0
-│   └─ 快速收敛到粗略几何
-├─ 中期：
-│   ├─ 线性衰减权重
-│   └─ 逐渐减少影响
-└─ 后期（iteration > 某阈值）：
-    ├─ 禁用深度约束
-    ├─ 权重 = 0.0
-    └─ 学习细粒度细节
-```
+#### 3.3.3 Layout-Aware Depth Constraint
 
-#### 深度约束实现
+公式 (1)：
+$$\mathcal{L}_{\mathrm{depth}} = [\max(||D_{\mathrm{render}} - D_{\mathrm{layout}}|| - \delta, 0)]^2$$
 
-```python
-class DepthConstraintLoss:
-    """
-    布局感知深度约束实现
-    """
-    
-    def __init__(self, delta=0.1):
-        """
-        初始化
-        Args:
-            delta: 软阈值，允许深度波动的范围
-        """
-        self.delta = delta
-    
-    def forward(self, render_depth, layout_depth):
-        """
-        计算深度约束损失
-        
-        Args:
-            render_depth: 场景表示渲染的深度，形状 [B, H, W]
-            layout_depth: BBS 输入的布局深度，形状 [B, H, W]
-        
-        Returns:
-            loss: 深度约束损失
-        """
-        # 计算深度差异的 L2 范数（逐像素）
-        diff = torch.norm(render_depth - layout_depth, p=2, dim=-1)
-        
-        # 应用软阈值
-        # 当 diff <= delta 时，值为 0
-        # 当 diff > delta 时，值为 (diff - delta)
-        thresholded_diff = torch.clamp(diff - self.delta, min=0.0)
-        
-        # 平方惩罚
-        loss = torch.mean(thresholded_diff ** 2)
-        
-        return loss
-    
-    def get_weight(self, iteration, total_iterations, schedule_type='linear'):
-        """
-        计算深度约束的权重（基于迭代次数）
-        
-        Args:
-            iteration: 当前迭代次数
-            total_iterations: 总迭代次数
-            schedule_type: 调度类型 ('linear', 'cosine', 'exponential')
-        
-        Returns:
-            weight: 深度约束权重 [0.0, 1.0]
-        """
-        if schedule_type == 'linear':
-            # 线性衰减
-            if iteration < total_iterations // 4:
-                weight = 1.0  # 初期：全权重
-            elif iteration < total_iterations // 2:
-                # 线性衰减
-                progress = (iteration - total_iterations // 4) / (total_iterations // 4)
-                weight = 1.0 - progress
-            else:
-                weight = 0.0  # 后期：无权重
-        
-        elif schedule_type == 'cosine':
-            # 余弦衰减
-            if iteration < total_iterations // 2:
-                progress = iteration / (total_iterations // 2)
-                weight = math.cos(progress * math.pi / 2)
-            else:
-                weight = 0.0
-        
-        elif schedule_type == 'exponential':
-            # 指数衰减
-            if iteration < total_iterations // 3:
-                progress = iteration / (total_iterations // 3)
-                weight = math.exp(-3 * progress)
-            else:
-                weight = 0.0
-        
-        return weight
+变量解释：
+- $D_{\mathrm{render}}$：scene representation (NeRF) 渲染出的 depth map
+- $D_{\mathrm{layout}}$：从 BBS 渲染出的 pseudo-ground truth depth
+- $\delta$：soft threshold，允许 depth 在合理范围内浮动
+- $\|\cdot\|$：depth difference norm
+- $\max(\cdot, 0)$：hinge function，只惩罚超出 $\delta$ 的部分
+- $[\cdot]^2$：squared hinge loss
 
-# 使用示例
-def training_with_depth_constraint():
-    """
-    带
-深度约束的训练过程
-    """
-    # 初始化
-    depth_constraint = DepthConstraintLoss(delta=0.1)
-    scene_representation = SceneRepresentation()
-    multi_view_dataset = load_dataset()
-    
-    for iteration in range(1000):
-        total_loss = 0.0
-        
-        # 训练循环
-        for view, target in multi_view_dataset:
-            # 渲染当前场景
-            rendered = scene_representation.render(view)
-            render_depth = rendered['depth']
-            
-            # 获取布局深度（伪真值）
-            layout_depth = multi_view_dataset.get_layout_depth(view)
-            
-            # 计算深度约束损失
-            weight = depth_constraint.get_weight(iteration, 1000)
-            depth_loss = depth_constraint.forward(render_depth, layout_depth)
-            
-            # 计算其他损失（RGB 损失、感知损失等）
-            rgb_loss = compute_rgb_loss(rendered['rgb'], target['rgb'])
-            perceptual_loss = compute_perceptual_loss(rendered['rgb'], target['rgb'])
-            
-            # 加权总损失
-            loss = rgb_loss + perceptual_loss + weight * depth_loss
-            total_loss += loss
-        
-        # 更新场景表示
-        scene_representation.update(total_loss)
-        
-        # 检查几何收敛
-        if iteration % 100 == 0:
-            check_geometry_convergence(scene_representation)
-```
+**Intuition**：这是 **huber-like loss with deadzone**。Deadzone $[-\delta, \delta]$ 内不惩罚，允许 NeRF 学到比 BBS 更细的 geometry；超出 deadzone 才惩罚，强制 NeRF 的粗几何对齐 BBS。
 
-### 14.4 纹理整合损失
+只在 distillation **initial stage** 启用，后期 disable 让 model 学 fine-grained geometry。
 
-#### VGG 感知损失
+Figure B 的 ablation 显示：没有这个 constraint，model 完全无法学到正确 geometry，因为 free camera trajectory + complex layout 让 2D guidance 几何 ambiguity 太大。
 
-```python
-class PerceptualLoss:
-    """
-    VGG 感知损失实现
-    原理链接：Johnson et al. [25]
-    """
-    
-    def __init__(self, vgg_model, layers=['relu1_2', 'relu2_2', 'relu3_3', 'relu4_3']):
-        """
-        初始化
-        Args:
-            vgg_model: 预训练的 VGG 模型
-            layers: 用于计算感知损失的层
-        """
-        self.vgg_model = vgg_model
-        self.layers = layers
-        self.loss_fn = nn.L1Loss()
-    
-    def forward(self, render, target):
-        """
-        计算感知损失
-        
-        Args:
-            render: 场景表示渲染的图像 [B, C, H, W]
-            target: 目标图像 [B, C, H, W]
-        
-        Returns:
-            loss: 感知损失
-        """
-        # 提取特征
-        render_features = self.vgg_model.extract_features(render, self.layers)
-        target_features = self.vgg_model.extract_features(target, self.layers)
-        
-        # 计算每层的 L1 损失
-        loss = 0.0
-        for layer_name in self.layers:
-            loss += self.loss_fn(
-                render_features[layer_name],
-                target_features[layer_name]
-            )
-        
-        return loss
-```
+**为什么 free camera 让 depth constraint 更关键？**
+Panorama 方法用固定 8 个 view，view 之间 correspondence 强约束 geometry。SceneCraft 用 arbitrary trajectory，必须靠 explicit depth prior 弥补 view 间 weak constraint。
 
-#### 风格损失
+#### 3.3.4 Floc Removal with Periodical Migration
 
-```python
-class StyleLoss:
-    """
-    风格损失实现（Gram 矩阵）
-    """
-    
-    def __init__(self, vgg_model, layers=['relu1_2', 'relu2_2', 'relu3_3', 'relu4_3']):
-        """
-        初始化
-        Args:
-            vgg_model: 预训练的 VGG 模型
-            layers: 用于计算风格损失的层
-        """
-        self.vgg_model = vgg_model
-        self.layers = layers
-        self.loss_fn = nn.L1Loss()
-    
-    def gram_matrix(self, features):
-        """
-        计算 Gram 矩阵
-        
-        Args:
-            features: 特征张量 [B, C, H, W]
-        
-        Returns:
-            gram: Gram 矩阵 [B, C, C]
-        """
-        B, C, H, W = features.size()
-        
-        # 重塑为 [B, C, H*W]
-        features = features.view(B, C, H * W)
-        
-        # 计算 Gram 矩阵: F @ F.T
-        gram = torch.bmm(features, features.transpose(1, 2))
-        
-        # 归一化
-        gram = gram / (C * H * W)
-        
-        return gram
-    
-    def forward(self, render, target):
-        """
-        计算风格损失
-        
-        Args:
-            render: 场景表示渲染的图像 [B, C, H, W]
-            target: 目标图像 [B, C, H, W]
-        
-        Returns:
-            loss: 风格损失
-        """
-        # 提取特征
-        render_features = self.vgg_model.extract_features(render, self.layers)
-        target_features = self.vgg_model.extract_features(target, self.layers)
-        
-        # 计算每层的风格损失
-        loss = 0.0
-        for layer_name in self.layers:
-            # 计算 Gram 矩阵
-            render_gram = self.gram_matrix(render_features[layer_name])
-            target_gram = self.gram_matrix(target_features[layer_name])
-            
-            # L1 损失
-            loss += self.loss_fn(render_gram, target_gram)
-        
-        return loss
+**Problem**：distillation 早期生成的图像 3D consistency 差，"averaging" 到 NeRF 上会产生 blurry flocs（悬浮在表面和空中的雾状 artifact）。后期即使 diffusion 输出 consistent 了，flocs 的 condensed volume density 也难以去除，可能引发 Janus problem（多面问题）。
 
-# 纹理整合总损失
-class TextureConsolidationLoss:
-    """
-    纹理整合总损失
-    """
-    
-    def __init__(self, vgg_model, 
-                 lambda_perceptual=1.0, 
-                 lambda_style=0.01):
-        """
-        初始化
-        Args:
-            vgg_model: 预训练的 VGG 模型
-            lambda_perceptual: 感知损失权重
-            lambda_style: 风格损失权重
-        """
-        self.perceptual_loss = PerceptualLoss(vgg_model)
-        self.style_loss = StyleLoss(vgg_model)
-        self.lambda_perceptual = lambda_perceptual
-        self.lambda_style = lambda_style
-    
-    def forward(self, render, target):
-        """
-        计算纹理整合损失
-        
-        Args:
-            render: 场景表示渲染的图像 [B, C, H, W]
-            target: 目标图像 [B, C, H, W]
-        
-        Returns:
-            loss: 纹理整合损失
-        """
-        # 感知损失
-        perceptual = self.perceptual_loss(render, target)
-        
-        # 风格损失
-        style = self.style_loss(render, target)
-        
-        # 加权总损失
-        loss = (self.lambda_perceptual * perceptual + 
-                self.lambda_style * style)
-        
-        return loss
-```
+**Solution**：维护两个 scene representation：
+- $S_c$：coarse representation（之前训练的）
+- $S_f$：fine representation（从头开始的新 representation）
+
+流程：
+1. Freeze $S_c$
+2. 用 $S_c$ 渲染图像，加 $t < T$ 的 partial noise（SDEdit-style）
+3. SceneCraft2D 生成 similar 但更高质量的图像监督 $S_f$
+4. Periodically 用 $S_c$ 更新 $S_f$（同步最新信息）
+
+**Intuition**：$S_c$ 是 anchor（保 geometric content），$S_f$ 是 refined version（去除 flocs）。通过"复制 + refine"而非"原地修复"，避免 flocs 的 density 已经 condensed 难以稀释的问题。这其实是一种 **soft reset** strategy。
+
+#### 3.3.5 Texture Consolidation
+
+用 **VGG perceptual loss + stylization loss [25]** 替代 pixel-wise RGB loss。
+
+**Why?** NeRF 直接拟合 diffusion 生成图像的 RGB 容易 blur，因为：
+- 多视图间 small inconsistency 被 averaging
+- pixel-wise loss 对 high-frequency detail 不敏感
+
+Perceptual loss 让 NeRF 渲染图像与 diffusion 生成图像在 **feature space** 对齐，保留 semantic 和 stylistic element，不强求 pixel-perfect。
+
+**重要 implication**：这个策略让 SceneCraft 不需要 explicit mesh exportation + post-optimization（Text2Room 等方法需要），end-to-end 生成 sharp texture。
+
+**Reference**：
+- IN2N: https://arxiv.org/abs/2303.12789
+- HiFA: https://arxiv.org/abs/2311.11679
+- SDEdit: https://arxiv.org/abs/2108.01073
+- VGG perceptual: https://arxiv.org/abs/1603.08155
+
+#### 3.3.6 Dual-GPU Training Scheduling
+
+实现 trick：GPU 1 训练 NeRF，GPU 2 持续 generate 图像 update dataset。需要 refine 时 GPU 1 切换为 offline renderer。
+
+这样 **decouple** diffusion generation（time-intensive）和 NeRF training（relatively fast），streamline distillation workflow。
 
 ---
 
-## 15. 研究社区影响
+## 4. 实验数据深度解读
 
-### 15.1 学术贡献
+### 4.1 Quantitative Results (Table 1)
 
-```
-SceneCraft 的学术贡献：
+| Method | CS↑ | IS↑ | 3DC↑ | VQ↑ |
+|---|---|---|---|---|
+| Text2Room [24] | 22.98 | 4.20 | 3.11 | 3.06 |
+| MVDiffusion [60] | 23.85 | 4.36 | 3.20 | 3.35 |
+| Set-the-scene [12] | 21.32 | 2.98 | 3.53 | 2.41 |
+| **SceneCraft** | **24.34** | 3.54 | **3.71** | **3.56** |
 
-1. 技术创新：
-   ├─ 首个支持自由多视图轨迹的布局引导 3D 生成
-   ├─ 突破全景视图约束
-   ├─ 支持复杂多房间场景
-   └─ 3D 一致性保证方法
+解读：
+- **CLIP Score (CS)**：SceneCraft 最高 24.34，说明 text-image alignment 最好
+- **Inception Score (IS)**：SceneCraft 3.54 比 MVDiffusion 4.36 低。作者解释为 fixed category finetuning 限制了 diversity。这是合理的 trade-off——为了 layout control 牺牲 diversity。
+- **3D Consistency (3DC)**：SceneCraft 3.71 最高，体现 distillation + depth constraint 的效果
+- **Visual Quality (VQ)**：SceneCraft 3.56 最高，texture consolidation 起作用
 
-2. 方法学贡献：
-   ├─ BBS 布局表示
-   ├─ SceneCraft2D 模型
-   ├─ 布局感知深度约束
-   ├─ 周期性迁移策略
-   └─ 纹理整合损失
+**没报告 FID**：因为 FID 依赖 ground truth dataset，跨 dataset 比较不公平。这是合理的考虑。
 
-3. 实验贡献：
-   ├─ 全面定量评估
-   ├─ 与基线方法对比
-   ├─ 复杂场景生成演示
-   └─ 风格变体控制
+User study：32 participants, 1-5 scale, following Saharia et al. [51] 的实验设计。
 
-4. 数据资源：
-   ├─ 处理后的数据集
-   ├─ 布局数据生成方法
-   └─ 代码开源（可能）
+### 4.2 训练成本
 
-影响：
-├─ 推动 3D 生成领域发展
-├─ 启发后续研究
-├─ 提供新的研究方向
-└─ 促进技术落地应用
-```
+- SceneCraft2D finetuning：2× A6000, batch size 16, lr 5e-5, 10k iterations
+- Scene generation：2× A6000
+  - 150 frames: 3-4 hours
+  - 300 frames: 5-6 hours
+- GPU 1 (diffusion): ~6GB FP16, 512×768
+- GPU 2 (NeRF/Nerfacto): ~28GB
 
-### 15.2 工业应用前景
+对比 concurrent methods：
+- ShowRoom3D [37]: ~10 hours/scene
+- UrbanArchitect [35]: ~12 hours, 32GB/scene
 
-```
-应用领域及需求：
+SceneCraft 效率有明显优势。
 
-1. VR/AR 开发：
-   ├─ 需求：快速生成虚拟环境
-   ├─ 优势：降低开发成本
-   ├─ 场景：虚拟现实平台、AR 应用
-   └─ 市场：快速增长
+### 4.3 Qualitative Comparisons (Figure 4)
 
-2. 游戏开发：
-   ├─ 需求：自动化场景生成
-   ├─ 优势：加速开发流程
-   ├─ 场景：开放世界游戏、沙盒游戏
-   └─ 市场：大型游戏行业
+三种 baseline 的 failure mode 很有启发性：
 
-3. 建筑与室内设计：
-   ├─ 需求：快速原型设计
-   ├─ 优势：客户展示便捷
-   ├─ 场景：建筑可视化、室内设计
-   └─ 市场：建筑设计行业
+**MVDiffusion (panorama-based)**：
+- 无法处理 L-shape、S-shape 房间
+- prompt 描述 layout 时无法准确生成
 
-4. Metaverse 平台：
-   ├─ 需求：大规模虚拟环境
-   ├─ 优势：快速内容生成
-   ├─ 场景：虚拟社交平台
-   └─ 市场：新兴元宇宙
+**Text2Room (inpainting-based)**：
+- 自由 camera trajectory 支持，但 iterative 生成导致 repetitive/contradictory frames
+- Figure 4 中 4 张床的 failure：因为 prompt 含 "bedroom"，每帧都 generate 一张床
 
-5. 电影与影视：
-   ├─ 需求：虚拟场景创建
-   ├─ 优势：降低制作成本
-   ├─ 场景：背景生成、虚拟棚拍摄
-   └─ 市场：影视制作
+**Set-the-scene (NeRF composition)**：
+- 无法 generate 显著 size 差异的 objects
+- 无法 generate wall-hanging objects like blinds, TV
 
-商业价值：
-├─ 降低制作成本
-├─ 提高生产效率
-├─ 加速产品上市
-├─ 扩大应用范围
-└─ 开创新市场
-```
+SceneCraft 解决了所有这些问题：arbitrary scale + complexity + prompt adjustment。
+
+### 4.4 Ablation Studies
+
+**Effect of Base Prompt (Figure 6)**：
+- BLIP2 caption → control failure
+- Base prompt "This is one view of a room." → preserve SD generative power + layout-following
+- Insight：**条件越复杂，prompt 越要 general**
+
+**Effect of Layout-Aware Depth Constraint (Figure B)**：
+- 没有这个：geometry 完全错误
+- 有这个：early stage 快速 converge 到 ground truth geometry
+- 错误位置（红框）会在后续 training 中被纠正（绿框）
+
+**Effect of Texture Consolidation (Figure C)**：
+- 没有 VGG perceptual loss：非常 blurry
+- 有：sharp, detailed texture
 
 ---
 
-## 16. 与其他先进技术的融合
+## 5. 与相关工作的 positioning
 
-### 16.1 与 LLM 集成
+### 5.1 与 SDS-family 的关系
+SceneCraft 属于 **SDS-equivalent** 但不直接用 SDS。继承自 DreamFusion [46]、SJC [63]、ProlificDreamer [66] 的思路，但用 IN2N-style 的 dataset replacement 替代 latent gradient。这避免了 SDS 的 oversaturation 和 mode seeking 问题。
 
-```python
-class LLMIntegratedSceneGeneration:
-    """
-    将 SceneCraft 与 LLM 集成
-    实现从自然语言自动生成布局
-    """
-    
-    def __init__(self, llm_model, scenecraft_model):
-        self.llm_model = llm_model
-        self.scenecraft_model = scenecraft_model
-    
-    def generate_scene_from_description(self, description, style="modern"):
-        """
-        从自然语言描述生成场景
-        
-        Args:
-            description: 场景描述（自然语言）
-            style: 装修风格
-        
-        Returns:
-            scene: 生成的 3D 场景
-        """
-        # 步骤 1：LLM 解析描述
-        parsed_info = self.llm_model.parse(description)
-        # 包含：房间类型、对象、布局关系等
-        
-        # 步骤 2：自动生成 BBS 布局
-        bbs = self.generate_bbs_from_parsed_info(parsed_info)
-        
-        # 步骤 3：生成提示
-        prompt = llm_model.generate_prompt(style, parsed_info)
-        
-        # 步骤 4：SceneCraft 生成场景
-        scene = self.scenecraft_model.generate(
-            bbs=bbs,
-            prompt=prompt
-        )
-        
-        return scene
-    
-    def generate_bbs_from_parsed_info(self, parsed_info):
-        """
-        从解析信息自动生成 BBS
-        
-        Args:
-            parsed_info: LLM 解析的信息
-        
-        Returns:
-            bbs: 边界框场景
-        """
-        bbs = {'rooms': [], 'objects': []}
-        
-        # 生成房间
-        for room_info in parsed_info['rooms']:
-            room_bbs = {
-                'type': room_info['type'],
-                'size': estimate_room_size(room_info),
-                'position': estimate_room_position(room_info, bbs)
-            }
-            bbs['rooms'].append(room_bbs)
-        
-        # 生成对象
-        for object_info in parsed_info['objects']:
-            object_bbs = {
-                'type': object_info['type'],
-                'size': estimate_object_size(object_info),
-                'position': estimate_object_position(object_info, bbs),
-                'room': object_info['room']
-            }
-            bbs['objects'].append(object_bbs)
-        
-        return bbs
+### 5.2 与 scene generation 方法的差异化
 
-# 集成示例
-def llm_scenecraft_integration():
-    """
-    LLM 与 SceneCraft 集成应用示例
-    """
-    # 初始化
-    llm = LLMModel()
-    scenecraft = SceneCraft()
-    integrated_system = LLMIntegratedSceneGeneration(llm, scenecraft)
-    
-    # 用户输入自然语言描述
-    user_description = """
-    设计一个现代风格的公寓，包括：
-    - 一个宽敝的客厅，配有 L 形沙发和大型咖啡桌
-    - 一个开放式厨房，带有岛台
-    - 一个主卧室，配有双人床和床头柜
-    - 一个小书房，配有书桌和书架
-    - 一个浴室
-    """
-    
-    # 生成场景
-    scene = integrated_system.generate_scene_from_description(
-        description=user_description,
-        style="modern"
-    )
-    
-    return scene
-```
+| Method | Layout | Camera | Panorama? | Scale |
+|---|---|---|---|---|
+| Text2Room [24] | ❌ | Free | ❌ | Single room |
+| SceneScape [17] | ❌ | Free | ❌ | Single room |
+| Text2NeRF [75] | ❌ | Free | ❌ | Single room |
+| MVDiffusion [60] | ❌ | 8-view | ✅ | Single room |
+| ShowRoom3D [37] | ❌ | 8-view | ✅ | Single room |
+| ControlRoom3D [53] | ✅ | 8-view | ✅ | Single room |
+| Ctrl-Room [16] | ✅ | 8-view | ✅ | Single room |
+| Set-the-Scene [12] | ✅ | Free | ❌ | Few objects |
+| CompoNeRF [32] | ✅ | Free | ❌ | Few objects |
+| **SceneCraft** | ✅ | **Free** | ❌ | **Multi-room** |
 
-### 16.2 与 NeRF 组合方法对比
+SceneCraft 是唯一同时满足 **layout-conditioned + free camera + non-panorama + multi-room** 的方法。
 
-```python
-# SceneCraft vs Set-the-scene [12] 技术对比
+### 5.3 与 UrbanArchitect [35] 的对比
+UrbanArchitect 做 street-view，条件简单：
+- fewer object categories
+- sparser, non-overlapping objects
+- predictable camera trajectories
 
-class MethodComparison:
-    """
-    SceneCraft 与 Set-the-scene 技术对比
-    """
-    
-    @staticmethod
-    def compare_architectures():
-        """
-        架构对比
-        """
-        comparison = {
-            '方法': ['SceneCraft', 'Set-the-scene'],
-            
-            '布局表示': [
-                'BBS（边界框场景）',
-                'NeRF 组合布局'
-            ],
-            
-            '生成策略': [
-                '蒸馏引导 3D 生成',
-                'NeRF 对象组合'
-            ],
-            
-            '2D 生成': [
-                'SceneCraft2D（条件扩散）',
-                'SDS（无条件扩散）'
-            ],
-            
-            '3D 表示': [
-                'Nerfacto（统一场景表示）',
-                '组合 NeRF（多个对象）'
-            ],
-            
-            '复杂场景': [
-                '✅ 支持多房间复杂布局',
-                '❌ 仅支持简单对象组合'
-            ],
-            
-            '墙上物体': [
-                '✅ 可以生成墙上物体',
-                '❌ 无法生成悬挂物体'
-            ],
-            
-            '尺寸差异': [
-                '✅ 处理各种尺寸对象',
-                '❌ 尺寸差异限制'
-            ],
-            
-            '3D 一致性': [
-                '✅ 高一致性（3DC: 3.71）',
-                '⚠️ 中等一致性（3DC: 3.53）'
-            ],
-            
-            '视觉效果': [
-                '✅ 高质量（VQ: 3.56）',
-                '⚠️ 中等质量（VQ: 2.41）'
-            ]
-        }
-        
-        return comparison
-    
-    @staticmethod
-    def compare_effectiveness():
-        """
-        效果对比
-        """
-        effectiveness = {
-            '场景类型': ['简单房间', '复杂多房间', '墙上物体', '尺寸差异对象'],
-            
-            'SceneCraft': [
-                '✅ 效果好',
-                '✅ 效果好',
-                '✅ 支持',
-                '✅ 支持'
-            ],
-            
-            'Set-the-scene': [
-                '✅ 效果好',
-                '❌ 不支持',
-                '❌ 不支持',
-                '❌ 不支持'
-            ]
-        }
-        
-        return effectiveness
-```
+Indoor scene 的 challenge：
+- dense, overlapping objects
+- fine-grained categories
+- arbitrary camera trajectories
+
+SceneCraft 专门为 indoor 的这些 challenge 设计。
 
 ---
 
-## 17. 未来研究建议
+## 6. Complex Generation Results (Figure 5)
 
-### 17.1 技术改进方向
+这是 paper 最 impressive 的部分，展示 prior work 无法实现的 case：
 
-```
-技术改进建议：
+- **Scene A**：bedroom 连接 living room，arbitrary camera trajectory
+- **Scene B-D**：multiple interconnected small rooms 组成的 complex indoor system
 
-1. BBS 布局表示改进：
-   ├─ 更复杂的几何表示
-   ├─ 分层布局表示
-   ├─ 对象关系建模
-   └─ 动态属性支持
+理论上可以 generate 任意 scale 的 scene，甚至 entire multi-bedroom apartment。
 
-2. SceneCraft2D 改进：
-   ├─ 更高质量图像生成
-   ├─ 更好的一致性保证
-   ├─ 支持更多风格
-   └─ 实时生成能力
-
-3. 蒸馏方法改进：
-   ├─ 更高效的蒸馏策略
-   ├─ 更好的几何学习
-   ├─ 减少训练时间
-   └─ 提高最终质量
-
-4. 3D 表示改进：
-   ├─ 替代场景表示
-   ├─ 更好的实时渲染
-   ├─ 支持编辑操作
-   └─ 更小的存储需求
-
-5. 评估方法改进：
-   ├─ 自动化 3D 质量评估
-   ├─ 更全面的指标
-   ├─ 用户偏好建模
-   └─ 公平比较标准
-```
-
-### 17.2 应用拓展方向
-
-```
-应用拓展建议：
-
-1. 室外场景生成：
-   ├─ 街景生成
-   ├─ 城市布局生成
-   ├─ 园林景观生成
-   └─ 大规模环境
-
-2. 动态场景生成：
-   ├─ 运动物体生成
-   ├─ 天气变化模拟
-   ├─ 光照变化模拟
-   └─ 时间变化模拟
-
-3. 交互式生成：
-   ├─ 实时用户反馈
-   ├─ 迭代优化
-   ├─ 多轮对话生成
-   └─ 个性化定制
-
-4. 跨模态生成：
-   ├─ 文本 → 3D 场景
-   ├─ 图像 → 3D 场景
-   ├─ 音频 → 3D 场景
-   └─ 组合模态生成
-
-5. 协作生成：
-   ├─ 多用户协作设计
-   ├─ 实时协同编辑
-   ├─ 版本控制
-   └── 权限管理
-```
-
-### 17.3 研究挑战
-
-```
-主要研究挑战：
-
-1. 复杂语义理解：
-   ├─ 多对象语义关系
-   ├─ 复杂推理能力
-   ├─ 隐含语义推断
-   └─ 抽象概念理解
-
-2. 大规模处理：
-   ├─ 高效大规模渲染
-   ├─ 分布式生成
-   ├─ 内存优化
-   └─ 实时处理
-
-3. 质量保证：
-   ├─ 生成质量定量评估
-   ├─ 一致性保证
-   ├─ 错误检测
-   └─ 自动修正
-
-4. 可控性增强：
-   ├─ 细粒度控制
-   ├─ 属性编辑
-   ├─ 局部修改
-   └─ 风格迁移
-
-5. 普适应用：
-   ├─ 跨领域适应
-   ├─ 通用化能力
-   ├─ 低资源部署
-   └─ 易用性改进
-```
+**Why prior panorama methods can't do this?**
+Panorama 假设 single viewpoint + 360° view，multi-room 的 occlusion 和 viewpoint 变化打破这个假设。SceneCraft 的 free camera trajectory + NeRF global representation 自然支持。
 
 ---
 
-## 总结
+## 7. Limitations & Future Directions
 
-SceneCraft 提出了一个完整的**布局引导 3D 场景生成框架**，通过以下核心技术实现了突破：
+### 7.1 失败 case
+1. **Extremely complicated scenes**（Figure E）：closely placed objects / highly overlapped bounding boxes，voxelization 表达不清楚
+2. **Mismatched layout & prompt**（Figure F）：bedroom layout + "kitchen" prompt → failure
 
-1. **BBS 布局表示**：用户友好的布局接口，支持复杂自由形布局
-2. **SceneCraft2D 模型**：高质量布局引导图像生成，语义和深度条件引导
-3. **蒸馏引导生成**：IN2N 风格蒸馏，退火策略，布局感知深度约束
-4. **周期性迁移**：解决雾状伪影问题，获得更清晰的场景
-5. **纹理整合**：感知损失和风格损失，提高纹理质量
+### 7.2 Image quality limitation
+- Irregular geometry objects（hollowed-out chairs, lamps, blinds）仍 blurry
+- Complex layout 限制 prompt 的 control ability
+- 无法 generate 像 original diffusion model 那样 vivid 的细节
 
-实验证明，SceneCraft 在**布局遵循性、3D 一致性、视觉质量**等方面都超越了现有的方法，并且能够生成之前方法无法处理的**复杂多房间场景**。
+### 7.3 Future directions
+- Outdoor scene generation
+- Fair 3D scene generation metrics
+- Scene editing with decomposed representation
+- LLM-based automatic layout + camera trajectory generation [77]
+- Transformer-based layout generation [16]
+- User feedback loop for iterative refinement
 
-该工作为 3D 场景生成领域提供了新的研究方法和思路，具有很高的学术价值和广泛的应用前景。
+---
+
+## 8. 我的整体评价和 intuition
+
+### 8.1 核心 contribution 的 elegance
+SceneCraft 的优雅在于把 3D 难题转化为 2D tractable 问题，再蒸馏回 3D。BBS→BBI→SceneCraft2D→NeRF 这条 pipeline 每一步都 well-motivated：
+- BBS：用户友好的 3D input
+- BBI：tractable 的 2D condition
+- SceneCraft2D：leverage 2D diffusion 的强大 generative power
+- NeRF distillation：恢复 3D consistency
+
+### 8.2 几个 engineering 亮点
+1. **Base prompt 训练 + specific prompt 推理**：很漂亮的 train-inference decoupling
+2. **Depth constraint with deadzone**：huber-like loss + staged enable/disable，避免 over-constraint
+3. **Dual representation migration**：soft reset 解决 floc 难去除的问题
+4. **VGG perceptual for texture**：避免 pixel-wise blur
+5. **Dual-GPU scheduling**：decouple diffusion + NeRF，提高效率
+
+### 8.3 与当前 trend 的关系
+这个工作代表了 text-to-3D 从 object → scene 的演进。可以看到几个 trend：
+- SDS-based 方法 → dataset-replacement-based 方法（更 stable）
+- Panorama constraint → free camera（更 flexible）
+- Object composition → holistic scene generation（更 coherent）
+- Pixel loss → perceptual loss（更 sharp）
+
+### 8.4 可能的延伸联想
+- 这个 framework 原则上可以替换 NeRF 为 3D Gaussian Splatting [27]，paper 也提到 "any representation can be used"
+- BBS 的 voxelization 思想可以 extend 到更细的 occupancy grid，逼近真实的 shape prior
+- Annealing strategy 可以 generalize 到其他 SDS-based 任务的 coarse-to-fine 优化
+- Dual representation migration 思路可以用于其他 generative refinement task（image-to-3D, 4D generation [42]）
+- LLM 自动生成 BBS 是 obvious next step，让整个 pipeline 从 text-only 出发
+
+### 8.5 可能的局限思考
+- IS 低于 MVDiffusion 说明 fixed category finetuning 牺牲了 diversity，可能用 open-vocabulary segmentation + category-conditional ControlNet 改善
+- Voxel size 0.2m 是 trade-off，更细 voxel 增加渲染成本但能表达更复杂 geometry
+- SceneCraft2D 是 per-view 独立 generate，跨 view consistency 完全靠 NeRF distillation 涌现，没有 explicit multi-view consistency constraint。MVDiffusion++ 类的 multi-view diffusion 可能进一步提升
+- 失败 case 提示 layout-prompt alignment 是 hidden constraint，可能需要 LLM 做 consistency check
+
+---
+
+## 9. 关键 References
+
+- **SceneCraft project**: https://orangesodahub.github.io/SceneCraft
+- **DreamFusion (SDS)**: https://arxiv.org/abs/2209.14988
+- **Stable Diffusion**: https://arxiv.org/abs/2112.10752
+- **ControlNet**: https://arxiv.org/abs/2302.05543
+- **NeRF**: https://arxiv.org/abs/2003.08934
+- **Nerfacto / NeRFStudio**: https://arxiv.org/abs/2302.04264
+- **Instruct-NeRF2NeRF**: https://arxiv.org/abs/2303.12789
+- **HiFA**: https://arxiv.org/abs/2311.11679
+- **SDEdit**: https://arxiv.org/abs/2108.01073
+- **Text2Room**: https://arxiv.org/abs/2303.11989
+- **MVDiffusion**: https://arxiv.org/abs/2307.01097
+- **ControlRoom3D**: https://arxiv.org/abs/2311.15637
+- **Ctrl-Room**: https://arxiv.org/abs/2310.03602
+- **Set-the-Scene**: https://arxiv.org/abs/2308.04417
+- **ScanNet++**: https://arxiv.org/abs/2308.11417
+- **Hypersim**: https://arxiv.org/abs/2011.02523
+- **3D Gaussian Splatting**: https://arxiv.org/abs/2308.14737
+- **VGG Perceptual Loss**: https://arxiv.org/abs/1603.08155
+- **BLIP**: https://arxiv.org/abs/2201.12086
+- **UrbanArchitect**: https://arxiv.org/abs/2404.06780
+- **GraphDreamer**: https://arxiv.org/abs/2404.00622
+
+---
+
+## 10. 总结
+
+SceneCraft 是一个 **engineering-heavy 但 insight 清晰** 的工作。核心 insight 是 "3D layout → 2D condition → 2D generation → 3D distillation" 这条 pipeline，每个 stage 都有相应的 technical innovation 支撑：
+
+- BBS 解决 user input 问题
+- SceneCraft2D + base prompt finetuning 解决 2D generation 问题
+- Annealing + depth constraint + dual migration + texture consolidation 解决 distillation 问题
+
+实验表明这套组合拳显著优于 prior art，且能 generate prior work 无法处理的 multi-room complex scene。Limitations 主要在 image quality 和 layout-prompt alignment 上，但这些都是 future work 的清晰方向。
+
+对 build intuition 来说，这个 paper 最值得 internalize 的几个 idea：
+1. **Train-inference prompt decoupling**：训练用 minimal prompt 保 generative power，推理用 rich prompt 注入 style
+2. **Staged loss scheduling**：early stage 用 strong prior constraint，late stage disable 让 model refine
+3. **Soft reset via dual representation**：当 artifact condensed 难以原位修复时，重新启动一个 representation 并 anchor 到旧的
+4. **Perceptual over pixel-wise**：generative distillation 用 perceptual loss 避免 blur
+5. **Decouple via parallel scheduling**：diffusion generation 和 NeRF training 用 dual-GPU 解耦，提高吞吐

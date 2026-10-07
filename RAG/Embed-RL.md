@@ -9,27 +9,15 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 用人话讲 Embed-RL
-
-Andrej，咱们抛开公式，用最直白的话聊聊这篇 paper 到底在干嘛。
-
----
-
-## 一句话版本
-
-让一个 AI 先"想清楚"要找啥（生成带证据的推理链），再让另一个 AI 拿这个推理链去算 embedding，然后**用检索结果反过来教训第一个 AI"你刚才想得不对，重新想"**。
-
----
-
-## 为什么需要这玩意
+让一个 AI 先"想清楚"要找啥（生成带证据的推理链），再让另一个 AI 拿这个推理链去算 embedding，然后用检索结果反过来教训第一个 AI"你刚才想得不对，重新想"。
 
 先说背景。假设你要做图片搜索——输入一句话，找最匹配的图。
 
 传统做法（CLIP 那套）：把文字和图片各塞进一个 encoder，出来两个向量，算 cosine similarity。简单粗暴，但遇到复杂 query 就拉胯，因为 text encoder 不够聪明。
 
-后来大家发现：**MLLM（像 Qwen-VL 这种多模态大模型）本身就很会理解图文，为啥不直接拿它当 encoder？** 于是有了 VLM2Vec、GME 这些工作——取 MLLM 最后一层 hidden state 当 embedding。效果确实好了一截。
+后来大家发现：MLLM（像 Qwen-VL 这种多模态大模型）本身就很会理解图文，为啥不直接拿它当 encoder？于是有了 VLM2Vec、GME 这些工作——取 MLLM 最后一层 hidden state 当 embedding。效果确实好了一截。
 
-再后来有人想：**MLLM 不是会"思考"吗？能不能让它先推理一下再出 embedding？** 这就是 generative embedding 的思路。这里头有两个代表：
+再后来有人想：MLLM 不是会"思考"吗？能不能让它先推理一下再出 embedding？ 这就是 generative embedding 的思路。这里头有两个代表：
 
 ### UME-R1 的做法（有问题）
 一个模型干两件事：边生成 CoT 推理，边输出 embedding。听着美好，但**两个目标打架**——

@@ -9,13 +9,8 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-好的 Karpathy，咱们用大白话把这篇 paper 捏碎了讲。为了 build your intuition，我先从最核心的吐槽开始，然后拆解它的 architecture、training tricks 和 experiment data。
-
-## 1. 一句话人话总结
-
-传统的 embedding model 就像金鱼记忆，每次只看当前这一段文本，完全没有上下文记忆。EvoEmbedding 给 embedding model 装上了一个“滚动备忘录”，每读完一段文本就更新一下备忘录，然后再结合备忘录的内容生成 embedding。这样生成的向量就自带了时间线和上下文状态。
-
-## 2. 传统的 Embedding 怎么了
+传统的 embedding model 就像金鱼记忆，每次只看当前这一段文本，完全没有上下文记忆。
+EvoEmbedding 给 embedding model 装上了一个“滚动备忘录”，每读完一段文本就更新一下备忘录，然后再结合备忘录的内容生成 embedding。这样生成的向量就自带了时间线和上下文状态。
 
 假设你在跟 Chatbot 聊天。
 第一天你说：“我明天要去北京”。
