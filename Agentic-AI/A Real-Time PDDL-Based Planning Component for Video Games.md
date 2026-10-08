@@ -8,7 +8,7 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-能否将 **PDDL (Planning Domain Definition Language)** 这种来自 AI planning 学术界的 expressive language 直接接入 commercial video game 的 game loop，并实现 real-time playability。
+能否将 PDDL (Planning Domain Definition Language) 这种来自 AI planning 学术界的 expressive language 直接接入 commercial video game 的 game loop，并实现 real-time playability。
 作者通过两个 case study (Iceblox 和 VBS2) 给出了 affirmative answer，并 reverse engineering 出一个通用的 planning component architecture。
 
 https://en.wikipedia.org/wiki/Planning_Domain_Definition_Language

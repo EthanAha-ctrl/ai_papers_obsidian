@@ -1,23 +1,3 @@
-我来帮您分析这个网站是做什么的。首先让我提取网站内容：
-
-
-让我通过搜索获取关于 Adept.ai 的详细信息：
-
-
-
-
-
-
-
-
-
-
-
-
-基于我的搜索结果，这是一个关于 **Adept.ai** 的全面解析：
-
-## 核心定位
-
 Adept.ai 是一个 **Enterprise AI Agent 平台**，专注于构建能够直接通过像素感知屏幕并操作软件的端到端多模态 AI agent。它与传统 RPA (Robotic Process Automation) 不同，不是通过 API 或 UI mapping，而是让 AI "像人一样" 理解和操作软件界面。
 
 **参考链接**: 
