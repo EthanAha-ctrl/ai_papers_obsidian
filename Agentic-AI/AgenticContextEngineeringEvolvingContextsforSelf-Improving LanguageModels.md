@@ -7,20 +7,7 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# ACE (Agentic Context Engineering) 深度解析
-
-## 1. 论文核心动机与定位
-
-这篇 paper 来自 Stanford (Qizheng Zhang, Kunle Olukotun, James Zou) 与 SambaNova Systems 合作，解决的是 LLM 应用中 **context adaptation** 这个范式下的根本性问题。
-
-论文主页：https://ace-agent.github.io
-代码仓库：https://github.com/ace-agent/ace
-AppWorld Leaderboard：https://appworld.dev/leaderboard
-
-### 1.1 为什么 Context Adaptation 重要
-
-现代 AI 系统 (compound AI systems, agents) 的能力提升路径正在从 **weight updates** 转向 **context engineering**。原因包括：
+解决的是 LLM 应用中 context adaptation 这个范式下的问题。为什么 Context Adaptation 重要: 现代 AI 系统 (compound AI systems, agents) 的能力提升路径正在从 **weight updates** 转向 **context engineering**。原因包括：
 - Context 可解释、可审计
 - 可在 runtime 快速注入新知识
 - 可跨 model / module 共享
@@ -57,13 +44,13 @@ ACE 借鉴 Dynamic Cheatsheet [41] 的 agentic 设计，将工作流分为三个
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     ACE Framework Workflow                       │
+│                     ACE Framework Workflow                      │
 └─────────────────────────────────────────────────────────────────┘
 
    New Query
        │
        ▼
-┌──────────────┐     reasoning trajectories    ┌──────────────────┐
+┌──────────────┐     reasoning trajectories     ┌──────────────────┐
 │              │ ─────────────────────────────▶ │                  │
 │   Generator  │                                │    Reflector     │
 │              │ ◀───────────────────────────── │                  │
@@ -79,8 +66,8 @@ ACE 借鉴 Dynamic Cheatsheet [41] 的 agentic 设计，将工作流分为三个
 └──────────────┘                            └──────────────────┘
        │                                              │
        │                                              ▼
-       │                                       ┌──────────────┐
-       └──────── feedback loop ────────────────│  Context     │
+       │                                      ┌──────────────┐
+       └──────── feedback loop ───────────────│  Context     │
                                               │  (Playbook)  │
                                               │  - bullets[] │
                                               └──────────────┘

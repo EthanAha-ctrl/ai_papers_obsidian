@@ -1,4 +1,3 @@
-# 文章概览：将 Kubernetes 迁移到 Hetzner 的实战经验
 
 这篇文章记录了作者将 **Kubernetes cluster** 从 **DigitalOcean** 迁移到 **Hetzner** 的完整过程，核心成果是：
 

@@ -9,37 +9,13 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# TwiFF 用人话版
-
-Andrej，我把刚才那堆表格和公式翻译成"跟我喝咖啡时讲"的版本。
-
----
-
-## 一句话版本
-
-现在的 multimodal model 推理时只会盯着当前这张图想事情，TwiFF 让模型在脑子里**先画一张"接下来会发生什么"的图，再根据这张图画解释**——就这一招，dynamic reasoning 就 work 了。
-
----
-
-## 一个我喜欢的类比
-
-想象你在看一张照片：一个人正把一个鸡蛋举在锅上方。问题是"鸡蛋接下来会怎样"。
-
+现在的 multimodal model 推理时只会盯着当前这张图想事情，TwiFF 让模型在脑子里先画一张"接下来会发生什么"的图，再根据这张图画解释. 想象你在看一张照片：一个人正把一个鸡蛋举在锅上方。问题是"鸡蛋接下来会怎样"。
 - **TCoT (纯文本 CoT)**：模型在心里默念"鸡蛋会被放下，然后掉进锅里，然后煮"——纯语言推理，没有画面，很容易 hallucinate（"鸡蛋可能会飞起来"也不是不可能，语言层面没约束）
 - **Static VCoT**：模型拿起放大镜仔细看鸡蛋的壳、看锅的形状——但鸡蛋还没掉下去，你看再仔细也预测不了未来
 - **TwiFF**：模型先在脑子里"画"一张鸡蛋已经掉进锅里的图，再画一张水沸腾的图，然后说"看，鸡蛋掉锅里了，所以会煮"——画的过程本身就把物理 prior 调出来用了
+generation model 在预训练时已经从几亿个视频里偷偷学到了"东西会往下掉"、"水开了会冒泡"、"球到桌边会掉"这些物理常识。TwiFF 本质上是把 generation model 当成一个**世界 prior 的查询接口**——generate 一张 future frame，就等于 query 这个 prior database 得到一个物理一致的假设状态，然后 LLM 部分负责解释这个状态。这就像人做梦——梦里你不会飞起来（除非你主动幻想），因为你的 brain 在 generate 梦境时受物理 prior 约束。Generation 是受约束的 imagination，这正是 reasoning 需要的。
 
-**关键 insight**：generation model 在预训练时已经从几亿个视频里偷偷学到了"东西会往下掉"、"水开了会冒泡"、"球到桌边会掉"这些物理常识。TwiFF 本质上是把 generation model 当成一个**世界 prior 的查询接口**——generate 一张 future frame，就等于 query 这个 prior database 得到一个物理一致的假设状态，然后 LLM 部分负责解释这个状态。
-
-这就像人做梦——梦里你不会飞起来（除非你主动幻想），因为你的 brain 在 generate 梦境时受物理 prior 约束。Generation 是受约束的 imagination，这正是 reasoning 需要的。
-
----
-
-## 为什么这件事其实挺难
-
-你会说："那让模型直接 generate 一段 video 不就完了？"
-
-问题在于三件事：
+那让模型直接 generate 一段 video 不就完了？问题在于三件事：
 
 **1. 你不知道 generate 什么**
 

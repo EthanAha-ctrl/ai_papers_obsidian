@@ -9,27 +9,13 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话讲清楚这篇paper
-
-## 一句话版本
-
-**RLVR没教会模型任何新东西，它只是把模型本来就会的东西"挑出来放大"了。**
-
----
-
-## 1. 先建立intuition：模型是个什么"东西"
-
-你训练一个LLM，pretrain完之后，模型有一个"sampling distribution"——给它一道题，它会在所有可能的token sequence上有个概率分布。这个分布里：
+RLVR没教会模型任何新东西，它只是把模型本来就会的东西"挑出来放大"了。训练一个LLM，pretrain完之后，模型有一个"sampling distribution"——给它一道题，它会在所有可能的token sequence上有个概率分布。这个分布里：
 - 有些sequence是correct reasoning path
 - 有些是incorrect
 - 有些是nonsense
 
-关键是：**这个分布本身，定义了模型"知道什么"**。分布里有的path，模型"会"；分布里没有的path，模型"不会"。
-
-现在你用RLVR训这个模型。question是：训完之后，模型"会"的东西变多了吗？还是只是把本来就会的东西"放大"了？
-
----
+这个分布本身，定义了模型"知道什么"。分布里有的path，模型"会"；
+分布里没有的path，模型"不会"。现在你用RLVR训这个模型。question是：训完之后，模型"会"的东西变多了吗？还是只是把本来就会的东西"放大"了？
 
 ## 2. 怎么测"模型会什么"——pass@k的intuition
 

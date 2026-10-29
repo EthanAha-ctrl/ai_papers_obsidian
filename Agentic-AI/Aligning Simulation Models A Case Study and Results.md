@@ -9,20 +9,8 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 用人话讲讲这篇 paper
-
-## 一句话概括
-
 两个 model 长得完全不一样，一个极简、一个全功能，作者们把全功能那个"砍到只剩骨架"，看能不能复刻极简那个的结果——大部分时候能，但一个 20×20 的小细节差点崩掉，最后查出来是 agent activation 的一个微小差异。
-
----
-
-## 两个 model 是什么
-
-### ACM (Axelrod Culture Model)
-
-你可以把它想成一个棋盘，每个格子里坐着一个 "agent"（村子），每个 agent 有一个 cultural vector，比如 5 个 feature，每个 feature 有 15 种可能的 value：
-
+两个 model 是什么: ACM (Axelrod Culture Model) 你可以把它想成一个棋盘，每个格子里坐着一个 "agent"（村子），每个 agent 有一个 cultural vector，比如 5 个 feature，每个 feature 有 15 种可能的 value：
 $$\mathbf{c}_i = (c_{i,1}, c_{i,2}, \ldots, c_{i,F})$$
 
 - $i$ = agent 编号

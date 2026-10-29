@@ -9,23 +9,10 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# Being-M0.7 人话版
-
-好,我用最直觉的方式跟你聊聊这篇 paper 到底在干嘛。
-
-## 一句话概括
-
-**让 robot 先在脑子里"想象"未来会怎样(看到啥、身体怎么动),再根据这个想象去执行动作。** 跟人类做事一样——你抓杯子之前,脑子里其实已经预演了"手伸过去、杯子在这个位置、我会这样握住"。Being-M0.7 就是把这个"预演"过程显式建模出来,然后让一个轻量级 action head 去执行。
-
-## 为什么 humanoid 这么难搞?
-
-三个痛点,作者全怼了一遍:
-
-**痛点 1:数据贵得离谱。** teleop 一台 29-DoF humanoid,你要同步 egocentric video + proprioception + whole-body command,操作员还得戴 VR 头套加 ankle tracker。千小时级就到顶了。对比 fixed-base arm 的 Open-X-Embodiment 数据轻松上万小时,humanoid 数据根本 scale 不起来。
-
-**痛点 2:pixel-level world prediction 是坑。** 像 Cosmos、Genie、MotionWAM 这些 world model 路线,直接生成未来 video frames。问题是 humanoid egocentric 视角下,robot 自己在快速移动,camera 在抖,生成的 pixel 很多时候都是模糊的垃圾。更关键的是——**robot 控制根本不需要 pixel fidelity**。你抓个杯子,需要知道的是"杯子在桌上、我的手要伸过去",而不是"杯子的釉面反光是啥纹理"。pixel generation 把大量 capacity 浪费在 control-irrelevant 的 appearance 上。
-
-**痛点 3:上下半身割裂。** 大部分 pipeline 把 locomotion 和 manipulation 分开学,导致 robot 走路的时候手不知道干嘛,抓东西的时候脚站不稳。whole-body coordination 始终差点意思。
+让 robot 先在脑子里"想象"未来会怎样(看到啥、身体怎么动),再根据这个想象去执行动作。Being-M0.7 就是把这个"预演"过程显式建模出来,然后让一个轻量级 action head 去执行。
+痛点 1:数据贵得离谱。teleop 一台 29-DoF humanoid,你要同步 egocentric video + proprioception + whole-body command,操作员还得戴 VR 头套加 ankle tracker。千小时级就到顶了。对比 fixed-base arm 的 Open-X-Embodiment 数据轻松上万小时,humanoid 数据根本 scale 不起来。
+痛点 2:pixel-level world prediction 是坑。像 Cosmos、Genie、MotionWAM 这些 world model 路线,直接生成未来 video frames。问题是 humanoid egocentric 视角下,robot 自己在快速移动,camera 在抖,生成的 pixel 很多时候都是模糊的垃圾。更关键的是——**robot 控制根本不需要 pixel fidelity**。你抓个杯子,需要知道的是"杯子在桌上、我的手要伸过去",而不是"杯子的釉面反光是啥纹理"。pixel generation 把大量 capacity 浪费在 control-irrelevant 的 appearance 上。
+痛点 3:上下半身割裂。大部分 pipeline 把 locomotion 和 manipulation 分开学,导致 robot 走路的时候手不知道干嘛,抓东西的时候脚站不稳。whole-body coordination 始终差点意思。
 
 ## Being-M0.7 的核心套路
 

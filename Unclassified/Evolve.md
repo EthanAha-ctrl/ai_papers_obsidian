@@ -1,16 +1,6 @@
-# 到底什么是 Evolve？——从第一性原理讲起
 
-## 一句话概括
-
-**Evolve = 让 LLM 当"变异算子"，自动写代码、跑评估、留优汰劣，循环迭代，最终"进化"出更好的算法/程序。**
-
----
-
-## 第一性原理拆解
-
-### 1. 传统 Genetic Programming (GP) 的局限
-
-经典的 genetic programming 用**人工设计的变异算子**（crossover, mutation）来修改程序树：
+Evolve = 让 LLM 当"变异算子"，自动写代码、跑评估、留优汰劣，循环迭代，最终"进化"出更好的算法/程序。
+传统 Genetic Programming (GP) 的局限: 经典的 genetic programming 用**人工设计的变异算子**（crossover, mutation）来修改程序树：
 
 $$\text{offspring} = \text{mutate}(\text{parent}, \text{random\_perturbation})$$
 

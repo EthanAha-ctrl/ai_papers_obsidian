@@ -1,5 +1,5 @@
-深入探讨了 **Codex CLI** 的核心架构——**Agent Loop（智能体循环）**
-文章聚焦于 **Codex Harness**——这是所有Codex产品共享的**核心Agent循环和执行逻辑**
+深入探讨了 Codex CLI 的核心架构——**Agent Loop（智能体循环）**
+文章聚焦于 Codex Harness——这是所有Codex产品共享的**核心Agent循环和执行逻辑**
 ## 二、核心概念
 
 ### 2.1 什么是Agent Loop？

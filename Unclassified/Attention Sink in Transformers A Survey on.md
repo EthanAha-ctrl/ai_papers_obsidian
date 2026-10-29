@@ -8,8 +8,7 @@ reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
 
-一篇关于 Attention Sink (AS) 现象的系统性综述, 综述了超过 180 篇相关研究.
-AS 研究领域组织为 **三个核心维度**:
+一篇关于 Attention Sink (AS) 现象的系统性综述, 综述了超过 180 篇相关研究. AS 研究领域组织为 **三个核心维度**:
 - **Fundamental Utilization** (基础利用): 把 AS 当作一个可被利用的现象
 - **Mechanistic Interpretation** (机制解释): 理解 AS 为什么产生、有什么功能
 - **Strategic Mitigation** (策略缓解): 系统性消除 AS 的负面影响

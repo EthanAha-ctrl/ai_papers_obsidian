@@ -8,29 +8,10 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-好的 Karpathy，我们抛开学术八股，用最直白的工程直觉和硬核细节来拆解 CogAgent。
-
-这篇 paper 核心就讲了一件事：**怎么让 VLM 既能看清屏幕上的芝麻小字，又不会因为图片太大把显存撑爆。**
-
----
-
-### 1. 为什么现有的 VLM 干不了 GUI 这活？
-
-你玩过 LLaVA 或者 CogVLM 就知道，它们通常吃 224×224 或 490×490 的图。在这个分辨率下，认出图里有只猫绰绰有余。但 GUI 截图不一样，一个 14px 的按钮文字、一个极小的关闭图标，在 224×224 分辨率下直接糊成一团像素。
-
-如果简单粗暴地把分辨率提到 1120×1120（GUI 场景必需），按 14×14 切 patch，会产生：
+怎么让 VLM 既能看清屏幕上的芝麻小字，又不会因为图片太大把显存撑爆。LLaVA 或者 CogVLM  通常吃 224×224 或 490×490 的图。在这个分辨率下，认出图里有只猫绰绰有余。但 GUI 截图不一样，一个 14px 的按钮文字、一个极小的关闭图标，在 224×224 分辨率下直接糊成一团像素。如果简单粗暴地把分辨率提到 1120×1120（GUI 场景必需），按 14×14 切 patch，会产生：
 $$L_{I_{\mathrm{hi}}} = \left(\frac{1120}{14}\right)^2 = 6400 \text{ tokens}$$
 
-标准 VLM 的做法是把 image tokens 和 text tokens 拼在一起送进 LLM 的 self-attention。Self-attention 的计算复杂度是 $O(N^2)$。把 256 tokens 换成 6400 tokens，计算量直接暴涨几百倍，GPU 直接罢工。
-
-之前 Qwen-VL 试图用 adapter 压缩，Kosmos-2.5 用 Perceiver Resampler，但要么压缩率不够，要么只针对纯文本 OCR 任务，失去了 general VLM 的能力。
-
----
-
-### 2. CogAgent 的架构直觉：放大镜与余光
-
-CogAgent 放弃了直接把大图塞进主路的做法，它用了一个“双分支”架构（参考 Figure 2）。
+标准 VLM 的做法是把 image tokens 和 text tokens 拼在一起送进 LLM 的 self-attention。Self-attention 的计算复杂度是 $O(N^2)$。把 256 tokens 换成 6400 tokens，计算量直接暴涨几百倍，GPU 直接罢工。之前 Qwen-VL 试图用 adapter 压缩，Kosmos-2.5 用 Perceiver Resampler，但要么压缩率不够，要么只针对纯文本 OCR 任务，失去了 general VLM 的能力。CogAgent 放弃了直接把大图塞进主路的做法，它用了一个“双分支”架构（参考 Figure 2）。
 
 **主路（低分辨率，把握全局）：** 
 保留原版 CogVLM 的结构，输入 224×224 的小图。这路负责理解图像的整体语义、布局、大致内容。序列长度只有 $L_{I_{\mathrm{lo}}} = 256$ tokens，计算极快。

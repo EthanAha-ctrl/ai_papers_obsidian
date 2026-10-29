@@ -1,13 +1,9 @@
 
 下面是对 **Agentic AI Foundation（简称 AAIF）** 的清晰解析，用中文说明其背景、目的、组成及重要性：
 
----
-
 ## 一、什么是 **Agentic AI Foundation (AAIF)**
 
 **Agentic AI Foundation** 是一个新成立的 **中立性开放标准组织（under Linux Foundation）**，其宗旨是推动 **agentic AI** 技术的发展与标准化，使不同厂商、工具和系统之间的 AI agents 能够 **互操作（interoperability）**、**协作（collaboration）** 和 **安全部署（production readiness）**。([OpenAI](https://openai.com/index/agentic-ai-foundation//?utm_source=chatgpt.com "OpenAI co-founds the Agentic AI Foundation under the Linux Foundation | OpenAI"))
-
----
 
 ## 二、为什么成立 AAIF
 

@@ -7,36 +7,19 @@ model: z-ai/glm-5.2
 reasoning_effort: max
 mineru_required_version: 3.4.4
 ---
-
-# ReTVL: Retry-Supervised Value Learning 深度讲解
-
-## 1. Paper 的核心 motivation
-
-Andrej, 这篇 paper 触及了 robot imitation learning 中一个被长期回避的"dirty secret": 真实 human demonstration data 几乎从来都不干净。Teleoperator 会 overshoot, 会对不准 grasp, 会 unstable contact, 然后会自发地纠正。这些 retry 事件在主流的数据 pipeline 里要么被当成 noise 直接丢弃, 要么被一刀切当作"suboptimal"用 progress label 硬拟合。
-
-**问题的本质** 在于: 几乎所有现有的 value/reward model 都假设 trajectory 的 progress 是一个关于 time 的 **monotonic non-decreasing scalar** —— 第 t 帧的 value 就该等于 t/T。这条假设在 expert demonstration 上是 fine 的, 但在含 retry 的 mixed-quality data 上是 fundamentally wrong 的: 当 robot 手爪在 grasp 前一秒明显偏了, human teleoperator 在那一帧的"task progress"实际上倒退了, 因为 system state 偏离了通向 success 的 manifold。Monotonic label 在这里会强迫 value model 把所有 downward fluctuation 抹平, 让它变成一个对"哪里出错"完全 blind 的光滑曲线。
-
-Paper 的关键 insight 是一句很朴素的话: **retry 事件本身是免费的 supervision signal**。Reasoning chain 是这样的: 
-
+长期回避的"dirty secret": 真实 human demonstration data 几乎从来都不干净。Teleoperator 会 overshoot, 会对不准 grasp, 会 unstable contact, 然后会自发地纠正。这些 retry 事件在主流的数据 pipeline 里要么被当成 noise 直接丢弃, 要么被一刀切当作"suboptimal"用 progress label 硬拟合。几乎所有 value/reward model 都假设 trajectory 的 progress 是一个关于 time 的 monotonic non-decreasing scalar —— 第 t 帧的 value 就该等于 t/T。这条假设在 expert demonstration 上是 fine 的, 但在含 retry 的 mixed-quality data 上是 fundamentally wrong 的: 当 robot 手爪在 grasp 前一秒明显偏了, human teleoperator 在那一帧的"task progress"实际上倒退了, 因为 system state 偏离了通向 success 的 manifold。Monotonic label 在这里会强迫 value model 把所有 downward fluctuation 抹平, 让它变成一个对"哪里出错"完全 blind 的光滑曲线。 retry 事件本身是免费的 supervision signal。
 1. Human 决定 retry 的那一刻, 一定是因为他自己感知到了"当前 state 偏了, 必须修"; 
 2. 所以 retry keypoint 是 human 内置 value function 的 argmin (一个 local minimum);
 3. retry 之前 value 应该 drop, retry 之后 (correction 开始执行) value 应该 rebound; 
-4. 这构成了一组 **pairwise preference**: (pre-retry state, retry state) 偏好 pre; (retry state, post-retry state) 偏好 post。
+4. 这构成了一组 pairwise preference: (pre-retry state, retry state) 偏好 pre; (retry state, post-retry state) 偏好 post。
 
 这条 insight 把一个看起来需要 dense per-frame label 的难题, 降维成了只需要标 sparse keypoint (每条 trajectory 平均 26 个) 的问题。Table 5 显示平均每条 trajectory 标注 < 1 min, inter-annotator error 仅 0.19s, 比 5Hz 一帧还短。
-
-## 2. 与现有范式的位置关系
-
-为了 build intuition, 我把这篇 paper 放在更大的 landscape 里看:
-
 - **Progress-based value learning** (RECAP [3], RoboDopamine [40], SARM [13], ARM [33]): 假设 monotonic, 学一个 t/T 的 regressor。ReTVL 在这一类基础上做修正。
 - **Preference-based reward learning** (Robometer [29], RLHF [16, 17]): 用 trajectory-level pairwise comparison 学 reward, 不显式建模 progress。ReTVL 借用了 Bradley-Terry preference loss, 但 anchor 是 sparse retry keypoint 而非整条 trajectory 比较。
 - **VLM-as-reward** (TOPReward [14], RoboReward [26]): zero-shot 用 VLM 判断 task completion probability。Cheap 但 coarse, 对 local mistake 几乎 zero sensitivity (paper 里 TOPReward 的 Pre > Retry 只有 0.329)。
 - **Suboptimal IL** (DemoDICE [23], Discriminator-weighted IL [45], Confidence-aware IL [49]): 在 policy 层面做 reweighting, 但 typically 需要专家参考或 discriminator。ReTVL 把 reweighting 信号从 value model 拉出来, 更直接。
 
 ReTVL 的设计哲学本质上是 **global absolute + local relative** 的双轨制: 用 absolute progress 把全局刻度锚住 (避免 value 乱漂), 用 retry-induced pairwise preference 把局部结构雕刻进去 (避免被单调假设抹平)。这是一种很典型的"分层监督"思想 —— coarse signal 用来定 anchor, fine signal 用来定 shape。
-
-## 3. 方法详解: 公式逐条拆解
 
 ### 3.1 Distributional Value Function (Eq. 1)
 

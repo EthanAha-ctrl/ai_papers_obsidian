@@ -1,18 +1,4 @@
-我来详细分析这篇关于测试时缩放的论文。让我先读取更多内容来获取完整的技术细节。
-
-
-
-让我继续读取剩余内容和一些关键部分：
-
-
-# s1: Simple test-time scaling 详细技术讲解
-
-## 一、论文背景与核心问题
-
-### 1.1 背景概述
-
 OpenAI o1模型展示了测试时缩放(test-time scaling)的强大能力，但未公开其方法论。这导致了许多复制工作，包括：
-
 - **Monte Carlo Tree Search (MCTS)** 方法：Gao et al. 2024, Zhang et al. 2024
 - **多智能体方法**：Qin et al. 2024
 - **DeepSeek R1**：使用强化学习通过百万样本和多个训练阶段达到o1级别性能

@@ -9,14 +9,6 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# DeepLoop 的人话版
-
-Andrej，我换个角度，把那篇 paper 用更直觉、更"讲给同事听"的方式重新过一遍。技术细节上一轮已经覆盖了，这一轮重点放在 **为什么这件事听起来理所当然但其实很微妙**，以及 **paper 背后那些没明说但你想知道的事**。
-
----
-
-## 1. 一句话故事
-
 Looped transformer 是那种"用 K 个 block 循环跑 R 轮"的模型，省参数但 effective depth 大。问题来了——DeepNorm 给 standard deep transformer 设计的 residual scaling 公式，在 looped 模型上**不够保守**。这篇 paper 证明：weight sharing 让同一组参数被反复读写，扰动放大效应比 standard 多一个 $R$ factor。修复就是一行：把 exponent 从 $1/4$ 改成 $1/2$。Empirical 上确实更好，而且 reasoning model (HRM) 也吃这一套。
 
 就这么简单。

@@ -8,27 +8,15 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-Andrej，我们用最直白的话来拆解这篇 paper。这篇 roadmap 其实就在讲一个核心故事：**我们的 multimodal model 怎么从“用胶带把不同的模态粘在一起”，演化到“从出生起就是一个原生的多模态大脑”。**
-
-下面我尽量用 build intuition 的方式，把这篇论文最核心的洞察、那些复杂的公式背后的物理直觉，以及工业界的 trade-off 给你讲透。
-
----
-
-### 1. 架构的演化：从“盲人摸象”到“全息共生”
-
-论文定义了三种 fusion 范式，你可以把它想象成大脑处理感官信息的进化史。
-
+我们的 multimodal model 怎么从“用胶带把不同的模态粘在一起”，演化到“从出生起就是一个原生的多模态大脑”。论文定义了三种 fusion 范式，你可以把它想象成大脑处理感官信息的进化史。
 **Late-Fusion (胶带拼接，非 Native)**
 $$\mathcal{F}_{\text{late}} = \mathcal{G}\big(\text{LLM}(\{\mathcal{P}_i(E_i(m_i))\})\big)$$
 变量解释：$m_i$ 是图像/音频输入，$E_i$ 是独立的预训练 encoder，$\mathcal{P}_i$ 是个浅层 projector，LLM 是冻结的语言模型，$\mathcal{G}$ 是输出头。
 人话：这就是 LLaVA 的做法。大脑（LLM）是冻结的、盲的。眼睛（Encoder）看了图像，压缩成一串特征，通过细管子（Projector）喂给大脑。大脑只能看到被嚼碎的语义摘要，根本不知道原始的视觉细节长什么样。生成图像时，还得在外面外挂一个 Diffusion head $\mathcal{G}$。理解和生成完全是割裂的两个模块。
-
 **Mid-Fusion (打通任督二脉，半 Native)**
 $$\mathcal{F}_{\text{mid}} = \text{Backbone}\big(\mathcal{C}(E_1(m_1), \ldots, E_n(m_n))\big)$$
 变量解释：$\mathcal{C}$ 是 cross-attention 或者深层 adapter，Backbone 是联合训练的多模态主干。
 人话：大脑终于不冻结了，眼睛（Encoder）和大脑一起联合训练。梯度可以流回 Encoder 了。这派以 CogVLM、Qwen2.5-VL 为代表。它们通过 $\mathcal{C}$ 操作把视觉特征深度注入到语言模型的中间层。大脑开始懂得视觉的细节了。但是，视觉和语言依然有明确的架构边界，上游还是有独立的 $E_i$，结构上依然是不对称的。
-
 **Early-Fusion (万物皆 Token，终极 Native)**
 $$\mathcal{F}_{\text{early}} = \text{Transformer}\big(\tau(\mathcal{U}_i m_i)\big)$$
 变量解释：$\tau$ 是统一的 tokenizer，把所有东西变成 token。

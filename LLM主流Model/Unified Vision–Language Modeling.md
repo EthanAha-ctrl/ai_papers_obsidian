@@ -8,18 +8,7 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# 用人话说说这篇Paper
-
-## 一句话总结
-
-这篇paper干了一件事: **把"看视频/图片"和"说话"统一到同一个"概念空间"里**, 这样一来, 一个只会读text的AI, 突然就能"看懂"视频了, 而且还能用1500种语言来描述它看到的东西。
-
----
-
-## 为什么这事难搞? 痛点在哪?
-
-现在的VLM (Vision-Language Model) 基本都是这么干的:
+把"看视频/图片"和"说话"统一到同一个"概念空间"里, 这样一来, 一个只会读text的AI, 突然就能"看懂"视频了, 而且还能用1500种语言来描述它看到的东西。现在的VLM (Vision-Language Model) 基本都是这么干的:
 
 **传统做法 (LLaVA路线)**:
 - Vision encoder看图, 输出一堆visual tokens

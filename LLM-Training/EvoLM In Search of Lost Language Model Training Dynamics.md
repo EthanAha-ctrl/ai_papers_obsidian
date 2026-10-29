@@ -9,23 +9,10 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# EvoLM 用人话版：把4个训练阶段的关系讲清楚
-
-## 这篇paper到底在干嘛
-
-简单说：现在大家训LM都是 Pre-training → CPT → SFT → RL 四步流水线，但是每一步到底贡献了多少、互相怎么影响、什么时候开始边际收益递减，没人说得清。之前的研究要么只看 pre-training loss，要么拿别人家的 base model 直接做 post-training，变量完全没控制住。
-
-EvoLM 团队从 scratch 训了 100+ 个 1B/4B 模型，所有 run 都跑完整 LR schedule，所有 stage 的 data/code/model 全开源。本质上是把 LM training 的全生命周期做了一个**控制变量法的系统性实验**。
-
-链接：[EvoLM HuggingFace](https://huggingface.co/EvoLM) ，相关讨论参考 [Chinchilla scaling law](https://arxiv.org/abs/2203.15556) 和 [Pythia suite](https://proceedings.mlr.press/v202/biderman23a.html)。
-
----
-
-## 12个takeaway 用大白话翻译
-
+LLM Pre-training → CPT → SFT → RL 四步流水线，每一步到底贡献了多少、互相怎么影响、什么时候开始边际收益递减，没人说得清。EvoLM 团队从 scratch 训了 100+ 个 1B/4B 模型，所有 run 都跑完整 LR schedule，所有 stage 的 data/code/model 全开源。本质上是把 LM training 的全生命周期做了一个控制变量法的系统性实验。12个takeaway 大白话:
 ### Takeaway 1-2：Pre-training 训太多反而有害
 
-**人话**：Chinchilla 说 1B 模型看 20B tokens 就够了，但大家都在疯狂 over-train (TinyLlama 看 2T，Llama 3.2 1B 看 9T)。EvoLM 发现，pre-training 在 80x-160x Chinchilla ratio (1B模型看80B-160B tokens) 之后，upstream accuracy 基本不动了，downstream 甚至开始掉。
+Chinchilla 说 1B 模型看 20B tokens 就够了，但大家都在疯狂 over-train (TinyLlama 看 2T，Llama 3.2 1B 看 9T)。EvoLM 发现，pre-training 在 80x-160x Chinchilla ratio (1B模型看80B-160B tokens) 之后，upstream accuracy 基本不动了，downstream 甚至开始掉。
 
 特别有意思的是 Table 1：**1B-320BT 反而比 4B-80BT 强** (相同 compute)。直觉是：4B 模型每 token 的 flops 是 1B 的 4 倍，相同 compute 下 4B 只能看 1/4 的 tokens，还没到 saturation regime，model capacity 没被激活。只有当 tokens 也进了 4B 的 saturation regime (160B)，4B 才突然"开窍"，ID Maj@16 从 13.2% 跳到 26.4%。
 
