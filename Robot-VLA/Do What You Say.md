@@ -9,12 +9,6 @@ followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
 
-# 用人话讲讲这篇paper
-
-Andrej，我换个讲法，先讲故事，再把技术细节埋进去。
-
-## 核心story：嘴上说一套，手上做一套
-
 想象你在调教一个robot。你给它看任务："把alphabet soup和butter都放进basket"。这个robot很聪明，它会先在脑子里"说"一段plan：
 
 > "First I pick up the soup, then place it in the basket. Now I need to pick up the butter..."

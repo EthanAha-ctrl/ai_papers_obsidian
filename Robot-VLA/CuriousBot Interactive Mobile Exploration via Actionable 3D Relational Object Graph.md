@@ -9,36 +9,15 @@ reasoning_effort: max
 followup_prompt: 用人话说说
 mineru_required_version: 3.4.4
 ---
-
-# CuriousBot 人话版
-
-Andrej，咱换个方式聊。前面那版太 paper 腔了，这次我就当在 whiteboard 前跟你唠。
-
----
-
-## 故事的起点
-
-你想想家里的 Spot 机器人进了一个房间，想"摸清楚"这里有啥。传统做法（TARE、frontier-based exploration、Active Neural SLAM）就是让它绕一圈，把 occupancy grid 填满，unknown area 趋零就算完事。这套逻辑在空旷仓库里 OK。
-
-问题是真实 household 里，一大堆东西你光靠"走一圈"根本看不到：
+家里的 Spot 机器人进了一个房间，想"摸清楚"这里有啥。传统做法（TARE、frontier-based exploration、Active Neural SLAM）就是让它绕一圈，把 occupancy grid 填满，unknown area 趋零就算完事。这套逻辑在空旷仓库里 OK。问题是真实 household 里，一大堆东西你光靠"走一圈"根本看不到：
 - 抽屉里塞着玩具（cabinet 把它遮住了）
 - 椅子背后有个盒子（chair 挡住视线）
 - 桌布下压着剪刀（cloth 覆盖）
 - 翻倒的箱子里面有东西（box 闭合状态）
 
-**这些 unknown 是物理遮挡，几何扫描解不了。必须动手。**
+这些 unknown 是物理遮挡，几何扫描解不了。必须动手。这就是 paper 的 motivation。前作 RoboEXP（Yunzhu Li 组里的工作，tabletop scale）已经证明 action-conditioned 3D scene graph 这个 idea 可行。CuriousBot 干的事就是把这套搬到 mobile robot 上——Spot 在房间里走来走去，建一个"带动作语义的关系图"。
 
-这就是 paper 的 motivation。前作 RoboEXP（Yunzhu Li 组里的工作，tabletop scale）已经证明 action-conditioned 3D scene graph 这个 idea 可行。CuriousBot 干的事就是把这套搬到 mobile robot 上——Spot 在房间里走来走去，建一个"带动作语义的关系图"。
-
----
-
-## 核心直觉：让 representation 自己告诉你该干嘛
-
-最关键的一句话：**robot 要决定下一步 explore 哪，需要一个能直接映射到 action 的 representation。**
-
-你给 LLM 一堆 RGB 图像，说"探索吧"——它懵。因为 RGB 帧里没显式编码"这个抽屉我还没开过"这个信息，LLM 得靠记忆力去推理"哦我刚才看了一眼那个 cabinet 但没动手，现在该开它了"。长 horizon 下这种 implicit memory 必崩。
-
-CuriousBot 的做法：robot 自己维护一个 graph $G = (V, E)$，每个 node 是物体（cabinet、handle、chair、cloth、box），每条 edge 是一种关系，关系一共 5 种：
+让 representation 自己告诉你该干嘛. robot 要决定下一步 explore 哪，需要一个能直接映射到 action 的 representation。你给 LLM 一堆 RGB 图像，说"探索吧"——它懵。因为 RGB 帧里没显式编码"这个抽屉我还没开过"这个信息，LLM 得靠记忆力去推理"哦我刚才看了一眼那个 cabinet 但没动手，现在该开它了"。长 horizon 下这种 implicit memory 必崩。CuriousBot 的做法：robot 自己维护一个 graph $G = (V, E)$，每个 node 是物体（cabinet、handle、chair、cloth、box），每条 edge 是一种关系，关系一共 5 种：
 
 | Relation | 含义 | 对应 action |
 |---|---|---|
